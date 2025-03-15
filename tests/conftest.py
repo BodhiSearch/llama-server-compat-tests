@@ -41,35 +41,27 @@ def model_path():
 @pytest.fixture(scope="session")
 def release_artifacts():
   """
-  Downloads artifacts from GitHub releases and returns their paths.
+  Downloads artifacts from the latest GitHub release and returns their paths.
   This fixture runs once before any tests execute.
   """
   # Repository details
   repo_owner = "BodhiSearch"
   repo_name = "llama.cpp"
-  base_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}"
+  latest_release_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
   # Create artifacts directory in project root
   project_root = Path(__file__).parent.parent
   artifacts_dir = project_root / "artifacts"
   artifacts_dir.mkdir(exist_ok=True)
 
-  # Get the latest release or pre-release
-  releases_url = f"{base_url}/releases"
+  # Get the latest release
   response = requests.get(
-    releases_url, headers={"Accept": "application/vnd.github.v3+json"}
+    latest_release_url, headers={"Accept": "application/vnd.github.v3+json"}
   )
   response.raise_for_status()
 
-  releases = response.json()
-  if not releases:
-    pytest.skip("No releases found in the repository")
-
-  # Get the latest release (including pre-releases)
-  latest_release = releases[0]
+  latest_release = response.json()
   git_sha = latest_release.get("target_commitish", "latest")
-
-  # Create directory for this specific release
   release_dir = artifacts_dir / git_sha
 
   # Check if we already have this release's artifacts
