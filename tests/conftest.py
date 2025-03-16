@@ -3,9 +3,6 @@ import os
 import requests
 from pathlib import Path
 from huggingface_hub import hf_hub_download
-import subprocess
-import time
-import psutil
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -27,9 +24,7 @@ def model_path():
   model_path = os.path.join(cache_dir, filename)
   if not os.path.exists(model_path):
     print(f"Downloading model {filename} from {repo_id}...")
-    model_path = hf_hub_download(
-      repo_id=repo_id, filename=filename, cache_dir=cache_dir
-    )
+    model_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir)
     print(f"Model downloaded to {model_path}")
   else:
     print(f"Model already exists at {model_path}")
@@ -55,9 +50,7 @@ def release_artifacts():
   artifacts_dir.mkdir(exist_ok=True)
 
   # Get the latest release
-  response = requests.get(
-    latest_release_url, headers={"Accept": "application/vnd.github.v3+json"}
-  )
+  response = requests.get(latest_release_url, headers={"Accept": "application/vnd.github.v3+json"})
   response.raise_for_status()
 
   latest_release = response.json()
@@ -91,114 +84,3 @@ def release_artifacts():
 
   # Convert Path objects to strings for easier handling in tests
   return [str(path) for path in artifact_paths]
-
-
-def kill_process_by_port(port):
-  """Kill any process running on the specified port"""
-  for proc in psutil.process_iter(['pid', 'name', 'connections']):
-    try:
-      for conn in proc.connections():
-        if conn.laddr.port == port:
-          proc.kill()
-          break
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-      pass
-
-
-class ServerConfig:
-  """Server configuration parameters"""
-  def __init__(self,
-               context_size: int = 2048,
-               n_gpu_layers: int = 0,
-               batch_size: int = 512,
-               port: int = 8080,
-               host: str = "127.0.0.1"):
-    self.context_size = context_size
-    self.n_gpu_layers = n_gpu_layers
-    self.batch_size = batch_size
-    self.port = port
-    self.host = host
-
-  def to_cmd_args(self) -> list:
-    """Convert config to command line arguments"""
-    return [
-      "-c", str(self.context_size),
-      "-ngl", str(self.n_gpu_layers),
-      "-b", str(self.batch_size),
-      "--port", str(self.port),
-      "--host", self.host
-    ]
-
-
-class ServerInstance:
-  def __init__(self, artifact_path: str, model_path: str, config: ServerConfig = None):
-    self.artifact_path = artifact_path
-    self.model_path = model_path
-    self.config = config or ServerConfig()
-    self.process = None
-
-  def start(self):
-    # Kill any existing process on the port
-    kill_process_by_port(self.config.port)
-
-    # Start the server process
-    cmd = [
-      self.artifact_path,
-      "-m", self.model_path,
-    ] + self.config.to_cmd_args()
-
-    self.process = subprocess.Popen(
-      cmd,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE
-    )
-
-    # Wait for server to start (adjust sleep time as needed)
-    time.sleep(2)
-
-    # Check if process is running
-    if self.process.poll() is not None:
-      stdout, stderr = self.process.communicate()
-      raise RuntimeError(
-        f"Server failed to start.\nCommand: {' '.join(cmd)}\n"
-        f"Stdout: {stdout.decode()}\nStderr: {stderr.decode()}"
-      )
-
-  def stop(self):
-    if self.process:
-      # Try graceful shutdown first
-      self.process.terminate()
-      try:
-        self.process.wait(timeout=5)
-      except subprocess.TimeoutExpired:
-        # Force kill if graceful shutdown fails
-        self.process.kill()
-      self.process = None
-
-      # Make sure the port is cleared
-      kill_process_by_port(self.config.port)
-
-@pytest.fixture
-def server_config(request):
-  """Provides server configuration"""
-  return ServerConfig()
-
-@pytest.fixture
-def server_instance(request, server_config):
-  """
-  Fixture that manages server lifecycle for each test.
-  Usage: def test_something(server_instance, artifact_path, model_path):
-  """
-  server = None
-
-  def _create_server(artifact_path: str, model_path: str, config: ServerConfig = None):
-    nonlocal server
-    server = ServerInstance(artifact_path, model_path, config or server_config)
-    server.start()
-    return server
-
-  yield _create_server
-
-  # Cleanup after test
-  if server:
-    server.stop()
