@@ -1,8 +1,10 @@
 import pytest
 import os
 import requests
+import json
 from pathlib import Path
 from huggingface_hub import hf_hub_download
+from datetime import datetime
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -54,15 +56,22 @@ def release_artifacts():
   response.raise_for_status()
 
   latest_release = response.json()
-  git_sha = latest_release.get("target_commitish", "latest")
-  release_dir = artifacts_dir / git_sha
+  current_time = datetime.now().strftime("%Y%m%d%H%M")
+  tag_name = latest_release.get("tag_name", current_time)
+  release_dir = artifacts_dir / tag_name
 
   # Check if we already have this release's artifacts
   if release_dir.exists() and any(release_dir.iterdir()):
-    print(f"Artifacts for commit {git_sha} already exist at {release_dir}")
+    print(f"Artifacts for release {tag_name} already exist at {release_dir}")
   else:
-    print(f"Downloading artifacts for commit {git_sha}...")
+    print(f"Downloading artifacts for release {tag_name}...")
     release_dir.mkdir(exist_ok=True)
+
+    # Save the release JSON data
+    release_json_path = release_dir / "release.json"
+    with open(release_json_path, "w") as f:
+      json.dump(latest_release, f, indent=2)
+      print(f"Saved release metadata to {release_json_path}")
 
     # Download all assets from the release
     for asset in latest_release.get("assets", []):
