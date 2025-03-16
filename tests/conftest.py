@@ -87,6 +87,11 @@ def release_artifacts():
         for chunk in response.iter_content(chunk_size=8192):
           f.write(chunk)
 
+      # On Unix-like systems (macOS/Linux), make binary files executable
+      if os.name == "posix" and not asset_name.endswith((".json", ".txt", ".md")):
+        os.chmod(asset_path, 0o755)  # rwxr-xr-x
+        print(f"Made {asset_name} executable")
+
   # Collect all artifact paths
   artifact_paths = list(release_dir.glob("*"))
   print(f"Found {len(artifact_paths)} artifacts")

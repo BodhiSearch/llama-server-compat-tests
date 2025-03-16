@@ -7,29 +7,23 @@ from pathlib import Path
 
 
 class ServerResource:
-  def __init__(self, executable_name, model_path):
-    self.executable_name = executable_name
+  def __init__(self, executable_path, model_path):
+    self.executable_path = Path(executable_path)
     self.model_path = model_path
     self.process = None
     self.port = 8080
 
   def setup(self):
-    print(f"\nStarting server with executable {self.executable_name}")
-    artifacts_dir = Path(__file__).parent.parent / "artifacts"
-    executable_path = None
+    print(f"\nStarting server with executable {self.executable_path}")
 
-    # Find the executable in artifacts directory
-    for path in artifacts_dir.rglob(self.executable_name):
-      if path.is_file() and os.access(path, os.X_OK):
-        executable_path = path
-        break
-
-    if not executable_path:
-      raise FileNotFoundError(f"Could not find executable {self.executable_name} in artifacts directory")
+    if not self.executable_path.is_file():
+      raise FileNotFoundError(f"Executable not found: {self.executable_path}")
+    if not os.access(self.executable_path, os.X_OK):
+      raise PermissionError(f"Executable is not executable: {self.executable_path}")
 
     # Start the server process
     self.process = subprocess.Popen(
-      [str(executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
+      [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
       stdout=subprocess.PIPE,
       stderr=subprocess.PIPE,
     )

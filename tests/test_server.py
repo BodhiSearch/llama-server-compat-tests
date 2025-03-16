@@ -8,8 +8,11 @@ def server_fixture(request, model_path, release_artifacts):
   """Class-scoped fixture that manages server lifecycle"""
   params = request.param
   executable_name = params["executable_name"]
+  executable_path = next(x for x in release_artifacts if x.endswith(executable_name))
+  if not executable_path:
+    raise FileNotFoundError(f"Could not find executable {executable_name} in artifacts directory")
 
-  server = ServerResource(executable_name, model_path)
+  server = ServerResource(executable_path, model_path)
   server.setup()
 
   yield server
