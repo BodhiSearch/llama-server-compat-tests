@@ -35,11 +35,12 @@ def model_path():
   return model_path
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def release_artifacts():
   """
   Downloads artifacts from the latest GitHub release and returns their paths.
   This fixture runs once before any tests execute.
+  The autouse=True parameter makes it run automatically without explicit reference.
   """
   # Repository details
   repo_owner = "BodhiSearch"

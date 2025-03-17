@@ -1,6 +1,38 @@
 import pytest
 import requests
 from resources import ServerResource
+from pathlib import Path
+
+
+def pytest_generate_tests(metafunc):
+  """Generate test parameters for server tests"""
+  if "server_fixture" in metafunc.fixturenames:
+    # Get all server executables from artifacts directory
+    project_root = Path(__file__).parent.parent
+    artifacts_dir = project_root / "artifacts"
+    if not artifacts_dir.exists():
+      return []
+
+    # Find the most recent release directory
+    release_dirs = [d for d in artifacts_dir.iterdir() if d.is_dir()]
+    if not release_dirs:
+      return []
+
+    latest_release_dir = max(release_dirs, key=lambda x: x.stat().st_mtime)
+    
+    # Get all server executables
+    server_executables = [
+      {"executable_name": f.name}
+      for f in latest_release_dir.iterdir()
+      if f.name.startswith("llama-server-")
+    ]
+    
+    metafunc.parametrize(
+      "server_fixture",
+      server_executables,
+      indirect=True,
+      scope="class"
+    )
 
 
 @pytest.fixture(scope="class")
@@ -20,10 +52,6 @@ def server_fixture(request, model_path, release_artifacts):
   server.cleanup()
 
 
-test_params = [{"executable_name": "llama-server-macos-cpu"}, {"executable_name": "llama-server-macos-metal"}]
-
-
-@pytest.mark.parametrize("server_fixture", test_params, indirect=True)
 class TestServer:
   """
   Test class that runs against different server executables.
