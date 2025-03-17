@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "llama-cpp-engine-verifier"
+name = "llama-server-compat-tests"
 version = "0.1.0"
 description = ""
 authors = ["anagri <127566+anagri@users.noreply.github.com>"]
@@ -14,12 +14,6 @@ psutil = "^5.9.8"
 pytest = "^8.3.5"
 huggingface-hub = "^0.29.3"
 pytest-timeout = "^2.3.1"
-
-[tool.poetry.group.cpu_detect]
-optional = true
-
-[tool.poetry.group.cpu_detect.dependencies]
-py-cpuid = {version = "^8.0.0", platform = "win32"}
 
 [build-system]
 requires = ["poetry-core"]
