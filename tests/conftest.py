@@ -81,12 +81,31 @@ def download_release_artifacts():
   return release_dir
 
 
+def download_model():
+  """Downloads the model from HuggingFace"""
+  # Define model details
+  repo_id = "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF"
+  filename = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
+
+  # Define where to save the model
+  cache_dir = str(Path(os.path.join(os.path.dirname(__file__), "..", "models")).absolute())
+  os.makedirs(cache_dir, exist_ok=True)
+
+  # Download the model if it doesn't already exist
+  print(f"Downloading model {filename} from {repo_id}...")
+  model_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir)
+  print(f"Model downloaded to {model_path}")
+
+  return str(Path(model_path).absolute())
+
+
 def pytest_configure():
   """
   This hook is called before test collection begins.
-  We use it to ensure artifacts are downloaded before any tests are collected.
+  We use it to ensure artifacts and model are downloaded before any tests are collected.
   """
   download_release_artifacts()
+  download_model()
 
 
 @pytest.fixture(scope="session")
@@ -120,22 +139,7 @@ def release_artifacts():
 @pytest.fixture(scope="session", autouse=True)
 def model_path():
   """
-  Downloads the model from HuggingFace once before any tests run.
-  Using scope="session" ensures it runs only once for the entire test suite.
-  The autouse=True parameter makes it run automatically without explicit reference.
+  Returns path to the downloaded model.
+  The actual download is handled by pytest_configure.
   """
-  # Define model details
-  repo_id = "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF"
-  filename = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
-
-  # Define where to save the model (you might want to customize this path)
-  cache_dir = str(Path(os.path.join(os.path.dirname(__file__), "..", "models")).absolute())
-  os.makedirs(cache_dir, exist_ok=True)
-
-  # Download the model if it doesn't already exist
-  print(f"Downloading model {filename} from {repo_id}...")
-  model_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir)
-  print(f"Model downloaded to {model_path}")
-
-  # Make the model path available to tests
-  return str(Path(model_path).absolute())
+  return download_model() 
