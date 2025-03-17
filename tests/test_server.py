@@ -65,11 +65,13 @@ class TestServer:
   Each server instance is started once per class and cleaned up after all tests complete.
   """
 
+  @pytest.mark.timeout(10)
   def test_health_check(self, server_fixture):
     """Test that the server's health endpoint returns 200 OK"""
     response = requests.get(f"http://127.0.0.1:{server_fixture.port}/health")
     assert response.status_code == 200
 
+  @pytest.mark.timeout(30)  # 30 seconds timeout for chat completion
   def test_chat_completion(self, server_fixture):
     """Test that the server can handle a basic chat completion request"""
     url = f"http://127.0.0.1:{server_fixture.port}/v1/chat/completions"
