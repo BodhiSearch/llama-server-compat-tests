@@ -19,20 +19,13 @@ def pytest_generate_tests(metafunc):
       return []
 
     latest_release_dir = max(release_dirs, key=lambda x: x.stat().st_mtime)
-    
+
     # Get all server executables
     server_executables = [
-      {"executable_name": f.name}
-      for f in latest_release_dir.iterdir()
-      if f.name.startswith("llama-server-")
+      {"executable_name": f.name} for f in latest_release_dir.iterdir() if f.name.startswith("llama-server-")
     ]
-    
-    metafunc.parametrize(
-      "server_fixture",
-      server_executables,
-      indirect=True,
-      scope="class"
-    )
+
+    metafunc.parametrize("server_fixture", server_executables, indirect=True, scope="class")
 
 
 @pytest.fixture(scope="class")
@@ -85,3 +78,4 @@ class TestServer:
     assert "message" in data["choices"][0]
     assert "content" in data["choices"][0]["message"]
     assert data["choices"][0]["message"]["content"].strip() != ""
+    assert "hello" in data["choices"][0]["message"]["content"].strip().lower()
