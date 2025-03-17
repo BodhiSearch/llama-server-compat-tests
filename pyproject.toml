@@ -15,6 +15,12 @@ pytest = "^8.3.5"
 huggingface-hub = "^0.29.3"
 pytest-timeout = "^2.3.1"
 
+[tool.poetry.group.cpu_detect]
+optional = true
+
+[tool.poetry.group.cpu_detect.dependencies]
+py-cpuid = {version = "^8.0.0", platform = "win32"}
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -3,6 +3,191 @@ import psutil
 from datetime import datetime
 import subprocess
 import sys
+import re
+import ctypes
+import struct
+
+
+def get_cpu_features_linux():
+  """Get CPU features on Linux using /proc/cpuinfo."""
+  try:
+    with open("/proc/cpuinfo", "r") as f:
+      for line in f:
+        if line.startswith("flags"):
+          return line.split(":")[1].strip().split()
+  except Exception:
+    return None
+
+
+def get_cpu_features_windows():
+  """Get CPU features on Windows using CPUID instruction."""
+  try:
+    import cpuid
+
+    features = set()
+
+    # Get CPU vendor
+    info = cpuid.CPUID(0)
+    vendor = struct.pack("III", info[1], info[3], info[2]).decode("utf-8")
+
+    # Get features
+    info = cpuid.CPUID(1)
+    if info[3] & (1 << 20):
+      features.add("SSE4.2")
+    if info[3] & (1 << 28):
+      features.add("AVX")
+    if info[3] & (1 << 29):
+      features.add("F16C")
+    if info[3] & (1 << 12):
+      features.add("FMA")
+
+    # Get extended features
+    info = cpuid.CPUID(7)
+    if info[1] & (1 << 5):
+      features.add("AVX2")
+    if info[1] & (1 << 16):
+      features.add("AVX512F")
+    if info[1] & (1 << 30):
+      features.add("AVX512BW")
+    if info[1] & (1 << 28):
+      features.add("AVX512CD")
+    if info[1] & (1 << 17):
+      features.add("AVX512DQ")
+    if info[1] & (1 << 31):
+      features.add("AVX512VL")
+    if info[2] & (1 << 1):
+      features.add("AVX512VBMI")
+    if info[2] & (1 << 11):
+      features.add("AVX512VNNI")
+    if info[2] & (1 << 5):
+      features.add("AVX512_BF16")
+    if info[3] & (1 << 24):
+      features.add("AMX_TILE")
+    if info[3] & (1 << 25):
+      features.add("AMX_INT8")
+    if info[3] & (1 << 22):
+      features.add("AMX_BF16")
+
+    return list(features)
+  except Exception:
+    return None
+
+
+def get_cpu_features_darwin():
+  """Get CPU features on macOS using sysctl."""
+  try:
+    result = subprocess.run(["sysctl", "-a"], capture_output=True, text=True)
+    features = set()
+
+    for line in result.stdout.split("\n"):
+      if "hw.optional." in line:
+        feature = line.split(":")[0].replace("hw.optional.", "").strip()
+        value = line.split(":")[1].strip()
+        if value == "1":
+          features.add(feature)
+
+    # Map macOS feature names to our standardized names
+    feature_map = {"avx1_0": "AVX", "avx2_0": "AVX2", "sse4_2": "SSE4.2", "fma": "FMA", "f16c": "F16C"}
+
+    return [feature_map.get(f, f) for f in features if f in feature_map]
+  except Exception:
+    return None
+
+
+def get_cpu_features():
+  """Get CPU features using platform-specific methods."""
+  os_type = platform.system()
+
+  if os_type == "Linux":
+    return get_cpu_features_linux()
+  elif os_type == "Windows":
+    return get_cpu_features_windows()
+  elif os_type == "Darwin":
+    return get_cpu_features_darwin()
+  return None
+
+
+def determine_cpu_variant():
+  """Determine which binary variant is suitable for this CPU."""
+  features = set(get_cpu_features() or [])
+
+  # Define feature requirements for each variant
+  variants = {
+    "llama-sapphirerapids": {
+      "required": {
+        "AVX",
+        "F16C",
+        "AVX2",
+        "FMA",
+        "AVX512F",
+        "AVX512BW",
+        "AVX512CD",
+        "AVX512DQ",
+        "AVX512VL",
+        "AVX512VBMI",
+        "AVX512VNNI",
+        "AVX512_BF16",
+        "AMX_TILE",
+        "AMX_INT8",
+        "AMX_BF16",
+      },
+      "description": "Sapphire Rapids",
+    },
+    "llama-zen4": {
+      "required": {"AVX", "F16C", "AVX2", "FMA", "AVX512F"},
+      "description": "AMD Zen 4 (Ryzen 7000 series)",
+    },
+    "llama-icelake": {
+      "required": {
+        "AVX",
+        "F16C",
+        "AVX2",
+        "FMA",
+        "AVX512F",
+        "AVX512BW",
+        "AVX512CD",
+        "AVX512DQ",
+        "AVX512VL",
+        "AVX512VBMI",
+        "AVX512VNNI",
+      },
+      "description": "Ice Lake, Tiger Lake",
+    },
+    "llama-skylakex": {
+      "required": {"AVX", "F16C", "AVX2", "FMA", "AVX512F", "AVX512BW", "AVX512CD", "AVX512DQ", "AVX512VL"},
+      "description": "Skylake-X, Cascade Lake, Cooper Lake",
+    },
+    "llama-alderlake": {
+      "required": {"AVX", "F16C", "AVX2", "FMA", "AVX_VNNI"},
+      "description": "Alder Lake, Raptor Lake",
+    },
+    "llama-haswell": {
+      "required": {"AVX", "F16C", "AVX2", "FMA"},
+      "description": "Haswell, Broadwell, Skylake (non-X), Zen 1-3",
+    },
+    "llama-sandybridge": {"required": {"AVX"}, "description": "Sandy Bridge, Ivy Bridge"},
+    "llama-sse42": {"required": {"SSE4.2"}, "description": "Core 2, Nehalem, early AMD"},
+    "llama-generic": {"required": set(), "description": "Any x86-64 CPU"},
+  }
+
+  # Find the most optimized variant that this CPU supports
+  for variant, info in variants.items():
+    if features.issuperset(info["required"]):
+      return {
+        "variant": variant,
+        "description": info["description"],
+        "supported_features": sorted(features),
+        "required_features": sorted(info["required"]),
+        "additional_features": sorted(features - info["required"]),
+      }
+
+  return {
+    "variant": "llama-generic",
+    "description": "Any x86-64 CPU",
+    "supported_features": sorted(features),
+    "required_features": [],
+    "additional_features": sorted(features),
+  }
 
 
 def get_cpu_info():
@@ -17,6 +202,8 @@ def get_cpu_info():
     "architecture": platform.machine(),
     "processor": platform.processor(),
     "cpu_brand": platform.processor(),
+    "features": get_cpu_features() or [],
+    "optimal_binary": determine_cpu_variant(),
   }
   return info
 
@@ -146,6 +333,26 @@ def format_system_info():
   if cpu_info["max_frequency"]:
     lines.append(f"Max Frequency: {cpu_info['max_frequency']:.2f} MHz")
   lines.append(f"Current CPU Usage: {cpu_info['total_cpu_usage']:.1f}%")
+
+  # CPU Features and Optimal Binary
+  optimal_binary = cpu_info.get("optimal_binary", {})
+  if optimal_binary:
+    lines.append("\nCPU Features and Optimization:")
+    lines.append("-" * 40)
+    lines.append(f"Optimal Binary: {optimal_binary['variant']}")
+    lines.append(f"CPU Class: {optimal_binary['description']}")
+    if optimal_binary["supported_features"]:
+      lines.append("\nSupported CPU Features:")
+      for feature in optimal_binary["supported_features"]:
+        lines.append(f"  - {feature}")
+    if optimal_binary["required_features"]:
+      lines.append("\nRequired Features for Selected Binary:")
+      for feature in optimal_binary["required_features"]:
+        lines.append(f"  - {feature}")
+    if optimal_binary["additional_features"]:
+      lines.append("\nAdditional Available Features:")
+      for feature in optimal_binary["additional_features"]:
+        lines.append(f"  - {feature}")
 
   # Memory Information
   lines.append("\nMEMORY:")
