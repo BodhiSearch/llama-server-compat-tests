@@ -77,11 +77,10 @@ def check_poetry(output_capture):
 
 
 def setup_reports_dir():
-  """Create or clean the reports directory."""
+  """Create the reports directory if it doesn't exist."""
   reports_dir = Path("reports")
-  if reports_dir.exists():
-    shutil.rmtree(reports_dir)
-  reports_dir.mkdir()
+  if not reports_dir.exists():
+    reports_dir.mkdir()
   return reports_dir
 
 
@@ -122,8 +121,9 @@ def main():
     output_capture.write(f"\nScript completed at: {end_time}\n")
     output_capture.write(f"Total duration: {duration}\n")
 
-    # Write output to report file
-    report_path = reports_dir / "pytest.txt"
+    # Write output to report file with timestamp
+    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
+    report_path = reports_dir / f"pytest_{timestamp}.txt"
     with open(report_path, "w") as f:
       f.write(output_capture.get_output())
 
