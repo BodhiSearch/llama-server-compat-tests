@@ -1,5 +1,6 @@
 import pytest
 import requests
+import sys
 from resources import ServerResource
 from pathlib import Path
 
@@ -20,12 +21,13 @@ def pytest_generate_tests(metafunc):
 
     latest_release_dir = max(release_dirs, key=lambda x: x.stat().st_mtime)
 
-    # Get all server executables
+    # Get all server executables with their names as IDs
     server_executables = [
       {"executable_name": f.name} for f in latest_release_dir.iterdir() if f.name.startswith("llama-server-")
     ]
+    ids = [f["executable_name"] for f in server_executables]
 
-    metafunc.parametrize("server_fixture", server_executables, indirect=True, scope="class")
+    metafunc.parametrize("server_fixture", server_executables, indirect=True, scope="class", ids=ids)
 
 
 @pytest.fixture(scope="class")
@@ -33,6 +35,18 @@ def server_fixture(request, model_path, release_artifacts):
   """Class-scoped fixture that manages server lifecycle"""
   params = request.param
   executable_name = params["executable_name"]
+
+  # Platform-specific skipping logic
+  if sys.platform == "darwin":  # macOS
+    if not executable_name.startswith("llama-server-macos-"):
+      pytest.skip(f"Skipping {executable_name} as it's not a macOS executable")
+  elif sys.platform.startswith("linux"):  # Linux
+    if not executable_name.startswith("llama-server-linux-"):
+      pytest.skip(f"Skipping {executable_name} as it's not a Linux executable")
+  elif sys.platform == "win32":  # Windows
+    if not (executable_name.startswith("llama-server-windows-") and executable_name.endswith(".exe")):
+      pytest.skip(f"Skipping {executable_name} as it's not a Windows executable")
+
   executable_path = next(x for x in release_artifacts if x.endswith(executable_name))
   if not executable_path:
     raise FileNotFoundError(f"Could not find executable {executable_name} in artifacts directory")
