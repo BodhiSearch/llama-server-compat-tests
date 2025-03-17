@@ -21,6 +21,7 @@ def release_artifacts():
   """
   release_dir = download_release_artifacts()
   paths = [str(path) for path in release_dir.iterdir() if path.name.startswith("llama-server-")]
+
   if not paths:
     raise FileNotFoundError(
       "No artifacts found. This should not happen as pytest_configure should have downloaded artifacts."

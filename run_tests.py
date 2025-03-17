@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from tests.download_model import download_model
 from tests.download_artifacts import download_release_artifacts
+from tests.system_info import format_system_info
 
 
 class OutputCapture:
@@ -94,6 +95,15 @@ def main():
   output_capture.write(f"Script started at: {start_time}\n")
 
   try:
+    # Collect system information first
+    output_capture.write("\nCollecting system information...\n")
+    try:
+      system_info = format_system_info()
+      output_capture.write(system_info)
+      print(system_info)
+    except Exception as e:
+      output_capture.write(f"Warning: Failed to collect system information: {str(e)}\n")
+
     # Check/install poetry
     check_poetry(output_capture)
 
@@ -125,6 +135,7 @@ def main():
 
     # Setup reports directory
     reports_dir = setup_reports_dir()
+    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
 
     # Run pytest
     output_capture.write("\nRunning tests...\n")
@@ -149,7 +160,6 @@ def main():
     output_capture.write(f"Total duration: {duration}\n")
 
     # Write output to report file with timestamp
-    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
     report_path = reports_dir / f"pytest_{timestamp}.txt"
     with open(report_path, "w") as f:
       f.write(output_capture.get_output())
