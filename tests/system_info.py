@@ -6,71 +6,135 @@ import sys
 import re
 import ctypes
 import struct
+import warnings
 
 
 def get_cpu_features_linux():
   """Get CPU features on Linux using /proc/cpuinfo."""
   try:
     with open("/proc/cpuinfo", "r") as f:
-      for line in f:
+      raw_info = f.read()
+      for line in raw_info.split("\n"):
         if line.startswith("flags"):
-          return line.split(":")[1].strip().split()
-  except Exception:
-    return None
+          flags = line.split(":")[1].strip().split()
+          features = set()
+
+          # Map CPU flags to our feature set
+          flag_map = {
+            "sse4_2": "SSE4.2",
+            "avx": "AVX",
+            "avx2": "AVX2",
+            "fma": "FMA",
+            "f16c": "F16C",
+            "avx512f": "AVX512F",
+            "avx512bw": "AVX512BW",
+            "avx512cd": "AVX512CD",
+            "avx512dq": "AVX512DQ",
+            "avx512vl": "AVX512VL",
+            "avx512vbmi": "AVX512VBMI",
+            "avx512vnni": "AVX512VNNI",
+            "avx512_bf16": "AVX512_BF16",
+            "amx_tile": "AMX_TILE",
+            "amx_int8": "AMX_INT8",
+            "amx_bf16": "AMX_BF16",
+            "avx_vnni": "AVX_VNNI",
+          }
+
+          for flag in flags:
+            if flag in flag_map:
+              features.add(flag_map[flag])
+
+          if not features:
+            warnings.warn("No CPU features detected in /proc/cpuinfo flags")
+          return sorted(features), raw_info
+  except Exception as e:
+    warnings.warn(f"Failed to read CPU features from /proc/cpuinfo: {str(e)}")
+    return None, None
 
 
 def get_cpu_features_windows():
-  """Get CPU features on Windows using CPUID instruction."""
+  """Get CPU features on Windows using wmic."""
   try:
-    import cpuid
+    result = subprocess.run(
+      ["wmic", "cpu", "get", "Caption,Name,ProcessorId,Manufacturer"], capture_output=True, text=True, timeout=5
+    )
 
-    features = set()
+    if result.returncode == 0:
+      features = set()
+      raw_info = result.stdout
+      cpu_info = raw_info.lower()
 
-    # Get CPU vendor
-    info = cpuid.CPUID(0)
-    vendor = struct.pack("III", info[1], info[3], info[2]).decode("utf-8")
+      # Intel processors
+      if "intel" in cpu_info:
+        if any(x in cpu_info for x in ["sapphire rapids", "spr"]):
+          features.update(
+            [
+              "AVX",
+              "F16C",
+              "AVX2",
+              "FMA",
+              "AVX512F",
+              "AVX512BW",
+              "AVX512CD",
+              "AVX512DQ",
+              "AVX512VL",
+              "AVX512VBMI",
+              "AVX512VNNI",
+              "AVX512_BF16",
+              "AMX_TILE",
+              "AMX_INT8",
+              "AMX_BF16",
+            ]
+          )
+        elif any(x in cpu_info for x in ["ice lake", "tiger lake"]):
+          features.update(
+            [
+              "AVX",
+              "F16C",
+              "AVX2",
+              "FMA",
+              "AVX512F",
+              "AVX512BW",
+              "AVX512CD",
+              "AVX512DQ",
+              "AVX512VL",
+              "AVX512VBMI",
+              "AVX512VNNI",
+            ]
+          )
+        elif any(x in cpu_info for x in ["skylake-x", "cascade lake", "cooper lake"]):
+          features.update(["AVX", "F16C", "AVX2", "FMA", "AVX512F", "AVX512BW", "AVX512CD", "AVX512DQ", "AVX512VL"])
+        elif any(x in cpu_info for x in ["alder lake", "raptor lake"]):
+          features.update(["AVX", "F16C", "AVX2", "FMA", "AVX_VNNI"])
+        elif any(x in cpu_info for x in ["haswell", "broadwell", "skylake"]):
+          features.update(["AVX", "F16C", "AVX2", "FMA"])
+        elif any(x in cpu_info for x in ["sandy bridge", "ivy bridge"]):
+          features.add("AVX")
+        elif any(x in cpu_info for x in ["nehalem", "westmere"]):
+          features.add("SSE4.2")
+        else:
+          warnings.warn(f"Unknown Intel CPU model: {cpu_info}")
 
-    # Get features
-    info = cpuid.CPUID(1)
-    if info[3] & (1 << 20):
-      features.add("SSE4.2")
-    if info[3] & (1 << 28):
-      features.add("AVX")
-    if info[3] & (1 << 29):
-      features.add("F16C")
-    if info[3] & (1 << 12):
-      features.add("FMA")
+      # AMD processors
+      elif "amd" in cpu_info:
+        if "ryzen" in cpu_info and any(x in cpu_info for x in ["7000", "zen4"]):
+          features.update(["AVX", "F16C", "AVX2", "FMA", "AVX512F"])
+        elif any(x in cpu_info for x in ["zen", "ryzen"]):
+          features.update(["AVX", "F16C", "AVX2", "FMA"])
+        else:
+          warnings.warn(f"Unknown AMD CPU model: {cpu_info}")
+      else:
+        warnings.warn(f"Unknown CPU manufacturer: {cpu_info}")
 
-    # Get extended features
-    info = cpuid.CPUID(7)
-    if info[1] & (1 << 5):
-      features.add("AVX2")
-    if info[1] & (1 << 16):
-      features.add("AVX512F")
-    if info[1] & (1 << 30):
-      features.add("AVX512BW")
-    if info[1] & (1 << 28):
-      features.add("AVX512CD")
-    if info[1] & (1 << 17):
-      features.add("AVX512DQ")
-    if info[1] & (1 << 31):
-      features.add("AVX512VL")
-    if info[2] & (1 << 1):
-      features.add("AVX512VBMI")
-    if info[2] & (1 << 11):
-      features.add("AVX512VNNI")
-    if info[2] & (1 << 5):
-      features.add("AVX512_BF16")
-    if info[3] & (1 << 24):
-      features.add("AMX_TILE")
-    if info[3] & (1 << 25):
-      features.add("AMX_INT8")
-    if info[3] & (1 << 22):
-      features.add("AMX_BF16")
-
-    return list(features)
-  except Exception:
-    return None
+      if not features:
+        warnings.warn("No CPU features detected from CPU model information")
+      return sorted(features), raw_info
+    else:
+      warnings.warn("Failed to get CPU information using wmic command")
+      return None, None
+  except Exception as e:
+    warnings.warn(f"Failed to detect CPU features on Windows: {str(e)}")
+    return None, None
 
 
 def get_cpu_features_darwin():
@@ -79,19 +143,35 @@ def get_cpu_features_darwin():
     result = subprocess.run(["sysctl", "-a"], capture_output=True, text=True)
     features = set()
 
-    for line in result.stdout.split("\n"):
-      if "hw.optional." in line:
-        feature = line.split(":")[0].replace("hw.optional.", "").strip()
-        value = line.split(":")[1].strip()
-        if value == "1":
-          features.add(feature)
+    if result.returncode == 0:
+      raw_info = result.stdout
+      # Map macOS feature names to our standardized names
+      feature_map = {
+        "hw.optional.avx1_0": "AVX",
+        "hw.optional.avx2_0": "AVX2",
+        "hw.optional.sse4_2": "SSE4.2",
+        "hw.optional.fma": "FMA",
+        "hw.optional.f16c": "F16C",
+      }
 
-    # Map macOS feature names to our standardized names
-    feature_map = {"avx1_0": "AVX", "avx2_0": "AVX2", "sse4_2": "SSE4.2", "fma": "FMA", "f16c": "F16C"}
+      for line in raw_info.split("\n"):
+        for macos_feature, std_feature in feature_map.items():
+          if macos_feature in line and line.strip().endswith("1"):
+            features.add(std_feature)
 
-    return [feature_map.get(f, f) for f in features if f in feature_map]
-  except Exception:
-    return None
+      # For Apple Silicon, we might want to add equivalent features
+      if "hw.optional.arm" in raw_info:
+        features.update(["NEON", "FMA"])  # ARM equivalent features
+
+      if not features:
+        warnings.warn("No CPU features detected from sysctl output")
+      return sorted(features), raw_info
+    else:
+      warnings.warn("Failed to get CPU information using sysctl command")
+      return None, None
+  except Exception as e:
+    warnings.warn(f"Failed to detect CPU features on macOS: {str(e)}")
+    return None, None
 
 
 def get_cpu_features():
@@ -99,17 +179,25 @@ def get_cpu_features():
   os_type = platform.system()
 
   if os_type == "Linux":
-    return get_cpu_features_linux()
+    features, raw_info = get_cpu_features_linux()
   elif os_type == "Windows":
-    return get_cpu_features_windows()
+    features, raw_info = get_cpu_features_windows()
   elif os_type == "Darwin":
-    return get_cpu_features_darwin()
-  return None
+    features, raw_info = get_cpu_features_darwin()
+  else:
+    warnings.warn(f"Unsupported operating system: {os_type}")
+    return None, None
+
+  return features, raw_info
 
 
 def determine_cpu_variant():
   """Determine which binary variant is suitable for this CPU."""
-  features = set(get_cpu_features() or [])
+  features = set(get_cpu_features()[0] or [])
+
+  if not features:
+    warnings.warn("No CPU features detected, cannot determine optimal binary variant")
+    return None
 
   # Define feature requirements for each variant
   variants = {
@@ -167,7 +255,6 @@ def determine_cpu_variant():
     },
     "llama-sandybridge": {"required": {"AVX"}, "description": "Sandy Bridge, Ivy Bridge"},
     "llama-sse42": {"required": {"SSE4.2"}, "description": "Core 2, Nehalem, early AMD"},
-    "llama-generic": {"required": set(), "description": "Any x86-64 CPU"},
   }
 
   # Find the most optimized variant that this CPU supports
@@ -181,17 +268,14 @@ def determine_cpu_variant():
         "additional_features": sorted(features - info["required"]),
       }
 
-  return {
-    "variant": "llama-generic",
-    "description": "Any x86-64 CPU",
-    "supported_features": sorted(features),
-    "required_features": [],
-    "additional_features": sorted(features),
-  }
+  warnings.warn("CPU does not meet minimum requirements for any optimized binary variant")
+  return None
 
 
 def get_cpu_info():
   """Get CPU information using psutil and platform."""
+  features, raw_info = get_cpu_features()
+
   info = {
     "physical_cores": psutil.cpu_count(logical=False),
     "total_cores": psutil.cpu_count(logical=True),
@@ -202,8 +286,9 @@ def get_cpu_info():
     "architecture": platform.machine(),
     "processor": platform.processor(),
     "cpu_brand": platform.processor(),
-    "features": get_cpu_features() or [],
-    "optimal_binary": determine_cpu_variant(),
+    "features": features or [],
+    "raw_info": raw_info,
+    "optimal_binary": determine_cpu_variant() if features else None,
   }
   return info
 
@@ -334,8 +419,18 @@ def format_system_info():
     lines.append(f"Max Frequency: {cpu_info['max_frequency']:.2f} MHz")
   lines.append(f"Current CPU Usage: {cpu_info['total_cpu_usage']:.1f}%")
 
+  # Raw CPU Information
+  if cpu_info.get("raw_info"):
+    lines.append("\nRaw CPU Information:")
+    lines.append("-" * 40)
+    # Format raw info for better readability
+    raw_lines = cpu_info["raw_info"].strip().split("\n")
+    for line in raw_lines:
+      if line.strip():  # Skip empty lines
+        lines.append(line.rstrip())
+
   # CPU Features and Optimal Binary
-  optimal_binary = cpu_info.get("optimal_binary", {})
+  optimal_binary = cpu_info.get("optimal_binary")
   if optimal_binary:
     lines.append("\nCPU Features and Optimization:")
     lines.append("-" * 40)
@@ -353,6 +448,14 @@ def format_system_info():
       lines.append("\nAdditional Available Features:")
       for feature in optimal_binary["additional_features"]:
         lines.append(f"  - {feature}")
+  else:
+    lines.append("\nWARNING: Could not determine optimal binary variant")
+    if cpu_info["features"]:
+      lines.append("\nDetected CPU Features:")
+      for feature in sorted(cpu_info["features"]):
+        lines.append(f"  - {feature}")
+    else:
+      lines.append("No CPU features detected")
 
   # Memory Information
   lines.append("\nMEMORY:")
@@ -368,7 +471,15 @@ def format_system_info():
   lines.append("\nGPU:")
   lines.append("-" * 40)
   gpu_info = info["gpu"]
+  if gpu_info.get("raw_info"):
+    lines.append("Raw GPU Information:")
+    for line in gpu_info["raw_info"].strip().split("\n"):
+      if line.strip():  # Skip empty lines
+        lines.append(line.rstrip())
+    lines.append("")
+
   if gpu_info["detected_gpus"]:
+    lines.append("Detected GPUs:")
     for i, gpu in enumerate(gpu_info["detected_gpus"], 1):
       lines.append(f"GPU {i}: {gpu['name']}")
   else:
