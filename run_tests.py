@@ -6,10 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
+from tests.download_model import download_model
+from tests.download_artifacts import download_release_artifacts
 
 
 class OutputCapture:
   """Captures all output while still printing to terminal."""
+
   def __init__(self):
     self.output_lines = []
 
@@ -39,7 +42,7 @@ def run_command(cmd, output_capture, **kwargs):
       stderr=subprocess.STDOUT,  # Redirect stderr to stdout
       text=True,
       bufsize=1,
-      **kwargs
+      **kwargs,
     )
 
     while True:
@@ -102,18 +105,42 @@ def main():
       sys.exit(1)
     output_capture.write("Dependencies installed successfully!\n")
 
+    # Download model
+    output_capture.write("\nDownloading model...\n")
+    try:
+      model_path = download_model()
+      output_capture.write(f"Model downloaded successfully to: {model_path}\n")
+    except Exception as e:
+      output_capture.write(f"Failed to download model: {str(e)}\n")
+      sys.exit(1)
+
+    # Download artifacts
+    output_capture.write("\nDownloading artifacts...\n")
+    try:
+      artifacts_dir = download_release_artifacts()
+      output_capture.write(f"Artifacts downloaded successfully to: {artifacts_dir}\n")
+    except Exception as e:
+      output_capture.write(f"Failed to download artifacts: {str(e)}\n")
+      sys.exit(1)
+
     # Setup reports directory
     reports_dir = setup_reports_dir()
 
     # Run pytest
     output_capture.write("\nRunning tests...\n")
-    code = run_command([
-      "poetry", "run", "pytest",
-      "-s",  # Show print statements
-      "-v",  # Verbose output
-      "--verbose",  # Extra verbose (shows skip reasons)
-      "-r", "fEsxXa",  # Show extra test summary info (including skip reasons)
-    ], output_capture)
+    code = run_command(
+      [
+        "poetry",
+        "run",
+        "pytest",
+        "-s",  # Show print statements
+        "-v",  # Verbose output
+        "--verbose",  # Extra verbose (shows skip reasons)
+        "-r",
+        "fEsxXa",  # Show extra test summary info (including skip reasons)
+      ],
+      output_capture,
+    )
 
     # Add completion time
     end_time = datetime.now()
