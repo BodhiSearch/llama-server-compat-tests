@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 
-import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
-from tests.download_model import download_model
-from tests.download_artifacts import download_release_artifacts
-from tests.system_info import format_system_info
 
 
 class OutputCapture:
@@ -95,15 +90,6 @@ def main():
   output_capture.write(f"Script started at: {start_time}\n")
 
   try:
-    # Collect system information first
-    output_capture.write("\nCollecting system information...\n")
-    try:
-      system_info = format_system_info()
-      output_capture.write(system_info)
-      print(system_info)
-    except Exception as e:
-      output_capture.write(f"Warning: Failed to collect system information: {str(e)}\n")
-
     # Check/install poetry
     check_poetry(output_capture)
 
@@ -115,23 +101,29 @@ def main():
       sys.exit(1)
     output_capture.write("Dependencies installed successfully!\n")
 
-    # Download model
-    output_capture.write("\nDownloading model...\n")
-    try:
-      model_path = download_model()
-      output_capture.write(f"Model downloaded successfully to: {model_path}\n")
-    except Exception as e:
-      output_capture.write(f"Failed to download model: {str(e)}\n")
+    # Collect system information after dependencies are installed
+    output_capture.write("\nCollecting system information...\n")
+    code = run_command(["poetry", "run", "python", "-m", "tests.system_info"], output_capture)
+    if code != 0:
+      output_capture.write("Failed to collect system information\n")
       sys.exit(1)
+    output_capture.write("System information collected successfully!\n")
 
-    # Download artifacts
-    output_capture.write("\nDownloading artifacts...\n")
-    try:
-      artifacts_dir = download_release_artifacts()
-      output_capture.write(f"Artifacts downloaded successfully to: {artifacts_dir}\n")
-    except Exception as e:
-      output_capture.write(f"Failed to download artifacts: {str(e)}\n")
+    # Download model using module
+    output_capture.write("\nDownloading model...\n")
+    code = run_command(["poetry", "run", "python", "-m", "tests.download_model"], output_capture)
+    if code != 0:
+      output_capture.write("Failed to download model\n")
       sys.exit(1)
+    output_capture.write("Model downloaded successfully!\n")
+
+    # Download artifacts using module
+    output_capture.write("\nDownloading artifacts...\n")
+    code = run_command(["poetry", "run", "python", "-m", "tests.download_artifacts"], output_capture)
+    if code != 0:
+      output_capture.write("Failed to download artifacts\n")
+      sys.exit(1)
+    output_capture.write("Artifacts downloaded successfully!\n")
 
     # Setup reports directory
     reports_dir = setup_reports_dir()

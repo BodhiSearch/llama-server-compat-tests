@@ -489,3 +489,18 @@ def format_system_info():
   lines.append("\n" + "=" * 80 + "\n")
 
   return "\n".join(lines)
+
+
+def main():
+  """Main function to print system information when module is run directly."""
+  try:
+    system_info = format_system_info()
+    print(system_info)
+    return 0
+  except Exception as e:
+    print(f"Error collecting system information: {str(e)}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+  sys.exit(main())
