@@ -95,7 +95,7 @@ def main():
 
     # Install dependencies
     output_capture.write("\nInstalling dependencies...\n")
-    code = run_command(["poetry", "install", "--no-root"], output_capture)
+    code = run_command(["poetry", "install"], output_capture)
     if code != 0:
       output_capture.write("Failed to install dependencies\n")
       sys.exit(1)

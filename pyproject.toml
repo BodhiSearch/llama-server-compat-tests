@@ -1,9 +1,10 @@
 [tool.poetry]
 name = "llama-server-compat-tests"
 version = "0.1.0"
-description = ""
+description = "A comprehensive test suite for validating LLaMA server implementations across different platforms and architectures"
 authors = ["anagri <127566+anagri@users.noreply.github.com>"]
 readme = "README.md"
+packages = [{include = "llama_server_compat_tests"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
