@@ -83,6 +83,7 @@ class TestServer:
       ],
       "model": "default",  # Model name doesn't matter as we only have one loaded
       "stream": False,
+      "seed": 42,
     }
 
     response = requests.post(url, json=payload)
