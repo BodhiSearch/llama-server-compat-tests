@@ -345,12 +345,97 @@ def safe_run_command(command):
     return None
 
 
+def get_gpu_driver_info():
+  """Get detailed GPU driver information for various vendors."""
+  # Initialize all vendors as not present by default
+  driver_info = {
+    "nvidia": {"present": False},
+    "amd": {"present": False},
+    "intel": {"present": False},
+    "apple": {"present": False}
+  }
+
+  # NVIDIA GPU info using nvidia-smi
+  nvidia_smi = safe_run_command(["nvidia-smi"])
+  if nvidia_smi:
+    driver_info["nvidia"].update({
+      "present": True,
+      "smi_output": nvidia_smi,
+      # Get NVIDIA driver version
+      "driver_version": safe_run_command(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]),
+      # Get detailed GPU info
+      "gpu_info": safe_run_command([
+        "nvidia-smi",
+        "--query-gpu=gpu_name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,utilization.memory",
+        "--format=csv,noheader,nounits"
+      ]),
+      # Get compute mode and other properties
+      "compute_mode": safe_run_command(["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"]),
+    })
+
+  # AMD GPU info using rocm-smi
+  rocm_smi = safe_run_command(["rocm-smi"])
+  if rocm_smi:
+    driver_info["amd"].update({
+      "present": True,
+      "smi_output": rocm_smi,
+      # Get ROCm version
+      "driver_version": safe_run_command(["rocm-smi", "--showdriverversion"]),
+      # Get detailed GPU info
+      "gpu_info": safe_run_command(["rocm-smi", "--showproductname", "--showmeminfo", "--showtemp"]),
+    })
+
+  # Intel GPU info
+  if platform.system() == "Linux":
+    intel_gpu = safe_run_command(["intel_gpu_top", "-L"])
+    if intel_gpu:
+      driver_info["intel"].update({
+        "present": True,
+        "smi_output": intel_gpu,
+        # Get Intel GPU driver info
+        "driver_version": safe_run_command(["intel_gpu_top", "-v"]),
+      })
+  elif platform.system() == "Windows":
+    # Try Intel Graphics Command Center info on Windows
+    igcc = safe_run_command([
+      "powershell",
+      "Get-WmiObject",
+      "Win32_VideoController",
+      "|",
+      "Where-Object",
+      "{$_.Name -like '*Intel*'}",
+      "|",
+      "Select-Object",
+      "Name,DriverVersion"
+    ])
+    if igcc:
+      driver_info["intel"].update({
+        "present": True,
+        "smi_output": igcc,
+      })
+
+  # Apple Silicon GPU info
+  if platform.system() == "Darwin" and platform.machine() == "arm64":
+    # Use system_profiler for Apple Silicon GPU info
+    apple_gpu = safe_run_command(["system_profiler", "SPDisplaysDataType"])
+    if apple_gpu:
+      driver_info["apple"].update({
+        "present": True,
+        "smi_output": apple_gpu,
+      })
+
+  return driver_info
+
+
 def get_gpu_info():
   """
   Get basic GPU information using platform-agnostic methods.
   This function tries different approaches and returns what it can find.
   """
   gpu_info = {"detected_gpus": []}
+
+  # Get detailed driver information
+  gpu_info["drivers"] = get_gpu_driver_info()
 
   # macOS
   if platform.system() == "Darwin":
@@ -375,13 +460,17 @@ def get_gpu_info():
 
   # Windows
   elif platform.system() == "Windows":
-    wmic = safe_run_command(["wmic", "path", "win32_VideoController", "get", "name"])
+    wmic = safe_run_command(
+      ["wmic", "path", "win32_VideoController", "get", "name,driverversion,videoprocessor,adapterram"]
+    )
     if wmic:
       gpu_info["raw_info"] = wmic
       # Parse WMIC output (skip header)
-      gpu_names = [line.strip() for line in wmic.split("\n")[1:] if line.strip()]
-      for name in gpu_names:
-        gpu_info["detected_gpus"].append({"name": name})
+      lines = [line.strip() for line in wmic.split("\n")[1:] if line.strip()]
+      for line in lines:
+        parts = line.split()
+        if parts:
+          gpu_info["detected_gpus"].append({"name": " ".join(parts)})
 
   return gpu_info
 
@@ -540,18 +629,79 @@ def format_system_info():
   # GPU Information
   lines.append("\nGPU:")
   lines.append("-" * 40)
-  gpu_info = info["gpu"]
+  gpu_info = info.get("gpu", {})
+
+  # Display driver information for each vendor
+  if gpu_info.get("drivers"):
+    lines.append("GPU Drivers:")
+    drivers = gpu_info["drivers"]
+
+    # NVIDIA
+    nvidia_info = drivers.get("nvidia", {})
+    if nvidia_info.get("present"):
+      lines.append("\n  NVIDIA GPU:")
+      lines.append("  " + "-" * 20)
+      if nvidia_info.get("driver_version"):
+        lines.append(f"    Driver Version: {nvidia_info['driver_version']}")
+      if nvidia_info.get("gpu_info"):
+        lines.append("    GPU Details:")
+        for gpu_line in nvidia_info["gpu_info"].split("\n"):
+          if gpu_line.strip():
+            lines.append(f"      {gpu_line.strip()}")
+      if nvidia_info.get("compute_mode"):
+        lines.append(f"    Compute Mode: {nvidia_info['compute_mode']}")
+
+    # AMD
+    amd_info = drivers.get("amd", {})
+    if amd_info.get("present"):
+      lines.append("\n  AMD GPU:")
+      lines.append("  " + "-" * 20)
+      if amd_info.get("driver_version"):
+        lines.append(f"    Driver Version: {amd_info['driver_version']}")
+      if amd_info.get("gpu_info"):
+        lines.append("    GPU Details:")
+        for gpu_line in amd_info["gpu_info"].split("\n"):
+          if gpu_line.strip():
+            lines.append(f"      {gpu_line.strip()}")
+
+    # Intel
+    intel_info = drivers.get("intel", {})
+    if intel_info.get("present"):
+      lines.append("\n  Intel GPU:")
+      lines.append("  " + "-" * 20)
+      if intel_info.get("driver_version"):
+        lines.append(f"    Driver Version: {intel_info['driver_version']}")
+      if intel_info.get("smi_output"):
+        lines.append("    GPU Details:")
+        for gpu_line in intel_info["smi_output"].split("\n"):
+          if gpu_line.strip():
+            lines.append(f"      {gpu_line.strip()}")
+
+    # Apple Silicon
+    apple_info = drivers.get("apple", {})
+    if apple_info.get("present"):
+      lines.append("\n  Apple Silicon GPU:")
+      lines.append("  " + "-" * 20)
+      if apple_info.get("smi_output"):
+        for gpu_line in apple_info["smi_output"].split("\n"):
+          if gpu_line.strip():
+            lines.append(f"    {gpu_line.strip()}")
+
+  # Display general GPU information
   if gpu_info.get("raw_info"):
-    lines.append("Raw GPU Information:")
+    lines.append("\nGeneral GPU Information:")
+    lines.append("-" * 25)
     for line in gpu_info["raw_info"].strip().split("\n"):
       if line.strip():  # Skip empty lines
         lines.append(line.rstrip())
     lines.append("")
 
-  if gpu_info["detected_gpus"]:
+  detected_gpus = gpu_info.get("detected_gpus", [])
+  if detected_gpus:
     lines.append("Detected GPUs:")
-    for i, gpu in enumerate(gpu_info["detected_gpus"], 1):
-      lines.append(f"GPU {i}: {gpu['name']}")
+    for i, gpu in enumerate(detected_gpus, 1):
+      if isinstance(gpu, dict) and gpu.get("name"):
+        lines.append(f"GPU {i}: {gpu['name']}")
   else:
     lines.append("No GPUs detected")
 
