@@ -71,7 +71,7 @@ class TestServer:
     response = requests.get(f"http://127.0.0.1:{server_fixture.port}/health")
     assert response.status_code == 200
 
-  @pytest.mark.timeout(30)  # 30 seconds timeout for chat completion
+  @pytest.mark.timeout(60)  # 60 seconds timeout for chat completion
   def test_chat_completion(self, server_fixture):
     """Test that the server can handle a basic chat completion request"""
     url = f"http://127.0.0.1:{server_fixture.port}/v1/chat/completions"

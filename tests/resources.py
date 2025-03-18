@@ -35,11 +35,16 @@ class ServerResource:
       try:
         response = requests.get(f"http://127.0.0.1:{self.port}/health")
         if response.status_code == 200:
-          print(f"Server started successfully on port {self.port}")
-          return
+          try:
+            json_response = response.json()
+            if json_response.get("status") == "ok":
+              print(f"Server started successfully on port {self.port}")
+              return
+          except (ValueError, KeyError):
+            pass
       except requests.exceptions.ConnectionError:
         time.sleep(1)
-        retry_count += 1
+      retry_count += 1
 
     raise TimeoutError("Server failed to start within the timeout period")
 
