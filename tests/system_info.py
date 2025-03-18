@@ -275,6 +275,8 @@ def determine_cpu_variant():
 def get_cpu_info():
   """Get CPU information using psutil and platform."""
   features, raw_info = get_cpu_features()
+  cpu_times = psutil.cpu_times()
+  cpu_stats = psutil.cpu_stats()
 
   info = {
     "physical_cores": psutil.cpu_count(logical=False),
@@ -289,6 +291,22 @@ def get_cpu_info():
     "features": features or [],
     "raw_info": raw_info,
     "optimal_binary": determine_cpu_variant() if features else None,
+    # New metrics
+    "times": {
+      "user": cpu_times.user,
+      "system": cpu_times.system,
+      "idle": cpu_times.idle,
+      "iowait": getattr(cpu_times, "iowait", None),  # Linux only
+      "irq": getattr(cpu_times, "irq", None),  # Linux only
+      "softirq": getattr(cpu_times, "softirq", None),  # Linux only
+    },
+    "stats": {
+      "ctx_switches": cpu_stats.ctx_switches,  # Number of context switches
+      "interrupts": cpu_stats.interrupts,  # Number of interrupts
+      "soft_interrupts": cpu_stats.soft_interrupts,  # Number of software interrupts
+      "syscalls": getattr(cpu_stats, "syscalls", None),  # Number of system calls (Linux only)
+    },
+    "load_avg": psutil.getloadavg(),  # 1, 5, and 15 minute load averages
   }
   return info
 
@@ -307,6 +325,14 @@ def get_memory_info():
     "swap_used": swap.used,
     "swap_free": swap.free,
     "swap_percentage": swap.percent,
+    # New metrics
+    "active": getattr(virtual_mem, "active", None),  # Memory currently in use
+    "inactive": getattr(virtual_mem, "inactive", None),  # Memory marked as not in use
+    "buffers": getattr(virtual_mem, "buffers", None),  # Cache for file system metadata
+    "cached": getattr(virtual_mem, "cached", None),  # Cache for various things
+    "shared": getattr(virtual_mem, "shared", None),  # Memory that may be simultaneously accessed
+    "swap_sin": getattr(swap, "sin", None),  # Memory swapped in from disk (cumulative)
+    "swap_sout": getattr(swap, "sout", None),  # Memory swapped to disk (cumulative)
   }
 
 
@@ -360,6 +386,49 @@ def get_gpu_info():
   return gpu_info
 
 
+def get_disk_info():
+  """Get disk information using psutil."""
+  partitions = psutil.disk_partitions(all=False)  # Only physical partitions
+  disk_info = []
+
+  for partition in partitions:
+    try:
+      usage = psutil.disk_usage(partition.mountpoint)
+      disk_info.append(
+        {
+          "device": partition.device,
+          "mountpoint": partition.mountpoint,
+          "fstype": partition.fstype,
+          "opts": partition.opts,
+          "total": usage.total,
+          "used": usage.used,
+          "free": usage.free,
+          "percent": usage.percent,
+        }
+      )
+    except (PermissionError, OSError):
+      continue
+
+  # Get disk I/O statistics if available
+  try:
+    io_counters = psutil.disk_io_counters()
+    io_stats = {
+      "read_count": io_counters.read_count,  # Number of reads
+      "write_count": io_counters.write_count,  # Number of writes
+      "read_bytes": io_counters.read_bytes,  # Bytes read
+      "write_bytes": io_counters.write_bytes,  # Bytes written
+      "read_time": io_counters.read_time,  # Time spent reading in ms
+      "write_time": io_counters.write_time,  # Time spent writing in ms
+    }
+  except (AttributeError, OSError):
+    io_stats = None
+
+  return {
+    "partitions": disk_info,
+    "io_stats": io_stats,
+  }
+
+
 def get_system_info():
   """Get comprehensive system information using cross-platform methods."""
   system_info = {
@@ -375,6 +444,7 @@ def get_system_info():
     "cpu": get_cpu_info(),
     "memory": get_memory_info(),
     "gpu": get_gpu_info(),
+    "disk": get_disk_info(),  # Add disk information
   }
 
   return system_info
@@ -484,6 +554,26 @@ def format_system_info():
       lines.append(f"GPU {i}: {gpu['name']}")
   else:
     lines.append("No GPUs detected")
+
+  # Disk Information
+  lines.append("\nDISK:")
+  lines.append("-" * 40)
+  disk_info = info["disk"]
+  if disk_info["partitions"]:
+    lines.append("Detected Partitions:")
+    for i, partition in enumerate(disk_info["partitions"], 1):
+      lines.append(f"Partition {i}:")
+      for key, value in partition.items():
+        lines.append(f"  {key}: {value}")
+  else:
+    lines.append("No partitions detected")
+
+  if disk_info["io_stats"]:
+    lines.append("\nDisk I/O Statistics:")
+    for key, value in disk_info["io_stats"].items():
+      lines.append(f"  {key}: {value}")
+  else:
+    lines.append("No disk I/O statistics available")
 
   # Footer
   lines.append("\n" + "=" * 80 + "\n")
