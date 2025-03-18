@@ -10,52 +10,40 @@ class TimingPlugin:
 
   def __init__(self):
     self.test_starts = {}
-    self.test_ends = {}
     self.suite_start = None
     self.suite_end = None
 
   def pytest_sessionstart(self, session):
     """Called before test session starts."""
     self.suite_start = datetime.now()
-
-  def pytest_sessionfinish(self, session):
-    """Called after whole test run finished."""
-    self.suite_end = datetime.now()
+    print("\nTest Suite Started:", self.suite_start.strftime('%Y-%m-%d %H:%M:%S'))
 
   def pytest_runtest_logstart(self, nodeid, location):
     """Called at the start of running the runtest protocol for a single test item."""
     self.test_starts[nodeid] = datetime.now()
 
+  @pytest.hookimpl(trylast=True)
   def pytest_runtest_logfinish(self, nodeid, location):
     """Called at the end of running the runtest protocol for a single test item."""
-    self.test_ends[nodeid] = datetime.now()
-
-  def pytest_terminal_summary(self, terminalreporter):
-    """Add timing information to terminal summary."""
-    if not self.suite_start or not self.suite_end:
-      return
-
-    tr = terminalreporter
-    tr.section("Test Execution Times")
+    test_end = datetime.now()
+    test_start = self.test_starts.get(nodeid)
     
-    # Overall suite timing
+    if test_start:
+      duration = test_end - test_start
+      # Print timing information immediately after test
+      print(f"\nTest Timing - {nodeid}")
+      print(f"  Started:  {test_start.strftime('%Y-%m-%d %H:%M:%S')}")
+      print(f"  Finished: {test_end.strftime('%Y-%m-%d %H:%M:%S')}")
+      print(f"  Duration: {duration}")
+
+  def pytest_sessionfinish(self, session):
+    """Called after whole test run finished."""
+    self.suite_end = datetime.now()
     suite_duration = self.suite_end - self.suite_start
-    tr.write_line(f"\nTest Suite:")
-    tr.write_line(f"  Started:  {self.suite_start.strftime('%Y-%m-%d %H:%M:%S')}")
-    tr.write_line(f"  Finished: {self.suite_end.strftime('%Y-%m-%d %H:%M:%S')}")
-    tr.write_line(f"  Duration: {suite_duration}")
-    
-    # Individual test timings
-    tr.write_line("\nIndividual Test Timings:")
-    for nodeid in sorted(self.test_starts.keys()):
-      if nodeid in self.test_ends:
-        start = self.test_starts[nodeid]
-        end = self.test_ends[nodeid]
-        duration = end - start
-        tr.write_line(f"  {nodeid}:")
-        tr.write_line(f"    Started:  {start.strftime('%Y-%m-%d %H:%M:%S')}")
-        tr.write_line(f"    Finished: {end.strftime('%Y-%m-%d %H:%M:%S')}")
-        tr.write_line(f"    Duration: {duration}")
+    print(f"\nTest Suite Completed:")
+    print(f"  Started:  {self.suite_start.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Finished: {self.suite_end.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Duration: {suite_duration}\n")
 
 
 @pytest.hookimpl(tryfirst=True)
