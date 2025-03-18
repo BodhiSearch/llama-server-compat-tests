@@ -21,46 +21,74 @@ class ServerResource:
     if not os.access(self.executable_path, os.X_OK):
       raise PermissionError(f"Executable is not executable: {self.executable_path}")
 
-    # Start the server process
-    self.process = subprocess.Popen(
-      [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-    )
+    try:
+      # Start the server process
+      self.process = subprocess.Popen(
+        [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+      )
 
-    # Wait for server to start
-    max_retries = 30
-    retry_count = 0
-    while retry_count < max_retries:
-      try:
-        response = requests.get(f"http://127.0.0.1:{self.port}/health")
-        if response.status_code == 200:
-          try:
-            json_response = response.json()
-            if json_response.get("status") == "ok":
-              print(f"Server started successfully on port {self.port}")
-              return
-          except (ValueError, KeyError):
-            pass
-      except requests.exceptions.ConnectionError:
-        time.sleep(1)
-      retry_count += 1
+      # Wait for server to start
+      max_retries = 30
+      retry_count = 0
+      while retry_count < max_retries:
+        try:
+          response = requests.get(f"http://127.0.0.1:{self.port}/health")
+          if response.status_code == 200:
+            try:
+              json_response = response.json()
+              if json_response.get("status") == "ok":
+                print(f"Server started successfully on port {self.port}")
+                return
+            except (ValueError, KeyError):
+              pass
+        except requests.exceptions.ConnectionError:
+          time.sleep(1)
+        retry_count += 1
 
-    raise TimeoutError("Server failed to start within the timeout period")
+      # If we get here, server failed to start
+      error_msg = "Server failed to start within the timeout period"
+      print(f"Error: {error_msg}")
+      if self.process:
+        try:
+          stdout, stderr = self.process.communicate(timeout=1)
+          if stdout:
+            print(f"Server stdout: {stdout.decode()}")
+          if stderr:
+            print(f"Server stderr: {stderr.decode()}")
+        except subprocess.TimeoutExpired:
+          pass
+      raise TimeoutError(error_msg)
+    except Exception as e:
+      print(f"Error during server setup: {str(e)}")
+      self.cleanup()
+      raise  # Re-raise the exception to mark the test as failed
 
   def cleanup(self):
+    """Clean up server resources"""
     if self.process:
-      print(f"\nStopping server process (PID: {self.process.pid})")
-      # Try graceful shutdown first
-      self.process.terminate()
       try:
-        self.process.wait(timeout=5)
-      except subprocess.TimeoutExpired:
-        # Force kill if graceful shutdown fails
-        self.process.kill()
-        # Kill any child processes
-        parent = psutil.Process(self.process.pid)
-        for child in parent.children(recursive=True):
-          child.kill()
-        parent.kill()
-      print("Server stopped")
+        print(f"\nStopping server process (PID: {self.process.pid})")
+        # Try graceful termination first
+        self.process.terminate()
+        try:
+          self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+          # If graceful termination fails, force kill
+          print("Graceful termination failed, forcing kill")
+          self.process.kill()
+      except Exception as e:
+        print(f"Warning: Error during process cleanup: {e}")
+      finally:
+        self.process = None
+        print("Server cleanup completed")
+
+  def __enter__(self):
+    """Context manager entry"""
+    self.setup()
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    """Context manager exit"""
+    self.cleanup()

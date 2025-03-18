@@ -52,11 +52,14 @@ def server_fixture(request, model_path, release_artifacts):
     raise FileNotFoundError(f"Could not find executable {executable_name} in artifacts directory")
 
   server = ServerResource(executable_path, model_path)
-  server.setup()
-
-  yield server
-
-  server.cleanup()
+  try:
+    server.setup()
+    yield server
+  except Exception as e:
+    print(f"\nTest failed for {executable_name}: {str(e)}")
+    pytest.fail(f"Server setup failed: {str(e)}")
+  finally:
+    server.cleanup()
 
 
 class TestServer:
