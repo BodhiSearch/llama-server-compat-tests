@@ -24,3 +24,6 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
+
+[tool.poetry.plugins.pytest11]
+timing = "llama_server_compat_tests.pytest_plugin"
