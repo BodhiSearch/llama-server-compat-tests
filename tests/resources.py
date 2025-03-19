@@ -4,6 +4,7 @@ import requests
 import os
 import psutil
 import random
+import re
 from pathlib import Path
 
 
@@ -13,6 +14,27 @@ class ServerResource:
     self.model_path = model_path
     self.process = None
     self.port = random.randint(20000, 65535)  # Random port between 20000 and max port
+
+  def _check_server_crash(self, stderr_output):
+    """Check if server crashed due to CPU compatibility issues"""
+    cpu_error_patterns = [
+      r"illegal instruction",  # Common CPU instruction error
+      r"invalid opcode",  # Another CPU instruction error
+      r"undefined symbol.*avx",  # AVX-related linking errors
+      r"undefined symbol.*sse",  # SSE-related linking errors
+      r"SIGILL",  # Illegal instruction signal
+    ]
+
+    if stderr_output:
+      stderr_text = stderr_output.decode().lower()
+      for pattern in cpu_error_patterns:
+        if re.search(pattern, stderr_text, re.IGNORECASE):
+          raise RuntimeError(
+            f"Server crashed due to CPU compatibility issue. This binary requires CPU features "
+            f"that are not available on this machine. Error: {stderr_text}"
+          )
+
+    return False
 
   def setup(self):
     print(f"\nStarting server with executable {self.executable_path}")
@@ -46,8 +68,18 @@ class ServerResource:
                 return
             except (ValueError, KeyError):
               pass
-        except requests.exceptions.ConnectionError as e:
-          print(f"server failed to start with error: {e}, retrying...")
+        except requests.exceptions.ConnectionError:
+          # Check if process has crashed
+          if self.process.poll() is not None:
+            stdout, stderr = self.process.communicate()
+            # Check for CPU compatibility issues
+            self._check_server_crash(stderr)
+            # If not a CPU issue, raise generic error
+            raise RuntimeError(
+              f"Server process died unexpectedly. Exit code: {self.process.returncode}\n"
+              f"stdout: {stdout.decode() if stdout else ''}\n"
+              f"stderr: {stderr.decode() if stderr else ''}"
+            )
         time.sleep(1)
         retry_count += 1
 
@@ -57,6 +89,8 @@ class ServerResource:
       if self.process:
         try:
           stdout, stderr = self.process.communicate(timeout=1)
+          # Check for CPU compatibility issues before raising timeout error
+          self._check_server_crash(stderr)
           if stdout:
             print(f"Server stdout: {stdout.decode()}")
           if stderr:

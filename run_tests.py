@@ -92,6 +92,49 @@ def setup_reports_dir():
   return reports_dir
 
 
+def get_latest_artifacts_dir():
+  """Get the most recent artifacts directory by reading latest.txt."""
+  artifacts_dir = Path("artifacts")
+  latest_txt = artifacts_dir / "latest.txt"
+
+  if not artifacts_dir.exists():
+    raise FileNotFoundError("Artifacts directory not found")
+
+  if not latest_txt.exists():
+    raise FileNotFoundError("latest.txt not found in artifacts directory")
+
+  # Read the latest release tag from latest.txt
+  with open(latest_txt, "r") as f:
+    latest_tag = f.read().strip()
+
+  release_dir = artifacts_dir / latest_tag
+  if not release_dir.exists():
+    raise FileNotFoundError(f"Release directory {latest_tag} referenced in latest.txt not found")
+
+  return release_dir
+
+
+def run_tests_for_artifact(artifact_path, logger):
+  """Run pytest for a specific artifact."""
+  logger.write(f"\nRunning tests for artifact: {artifact_path}\n")
+  logger.write("=" * 80 + "\n")
+
+  return run_command(
+    [
+      "poetry",
+      "run",
+      "pytest",
+      "-s",  # Show print statements
+      "-v",  # Verbose output
+      "--verbose",  # Extra verbose (shows skip reasons)
+      "-r",
+      "fEsxXa",  # Show extra test summary info
+      f"--artifact-path={artifact_path}",  # Pass artifact path to pytest
+    ],
+    logger,
+  )
+
+
 def main():
   start_time = datetime.now()
   reports_dir = setup_reports_dir()
@@ -137,30 +180,40 @@ def main():
         sys.exit(1)
       logger.write("Artifacts downloaded successfully!\n")
 
-      # Run pytest
-      logger.write("\nRunning tests...\n")
-      code = run_command(
-        [
-          "poetry",
-          "run",
-          "pytest",
-          "-s",  # Show print statements
-          "-v",  # Verbose output
-          "--verbose",  # Extra verbose (shows skip reasons)
-          "-r",
-          "fEsxXa",  # Show extra test summary info (including skip reasons)
-        ],
-        logger,
-      )
+      # Get latest artifacts directory
+      artifacts_dir = get_latest_artifacts_dir()
+      artifacts = [f for f in artifacts_dir.iterdir() if f.name.startswith("llama-server-")]
 
-      # Add completion time
+      if not artifacts:
+        logger.write("No server artifacts found to test\n")
+        sys.exit(1)
+
+      # Run tests for each artifact
+      failed_artifacts = []
+      for artifact in artifacts:
+        logger.write(f"\nTesting artifact: {artifact.name}\n")
+        code = run_tests_for_artifact(str(artifact), logger)
+        if code != 0:
+          failed_artifacts.append(artifact.name)
+          logger.write(f"Tests failed for {artifact.name}\n")
+        else:
+          logger.write(f"Tests passed for {artifact.name}\n")
+
+      # Add completion time and summary
       end_time = datetime.now()
       duration = end_time - start_time
       logger.write(f"\nScript completed at: {end_time}\n")
       logger.write(f"Total duration: {duration}\n")
       logger.write(f"\nTest results saved to {report_path}\n")
 
-      sys.exit(code)
+      # Print summary of failed artifacts
+      if failed_artifacts:
+        logger.write("\nFailed artifacts:\n")
+        for artifact in failed_artifacts:
+          logger.write(f"  - {artifact}\n")
+        sys.exit(1)
+      else:
+        logger.write("\nAll artifacts tested successfully!\n")
 
   except KeyboardInterrupt:
     sys.stderr.write("\nScript interrupted by user\n")

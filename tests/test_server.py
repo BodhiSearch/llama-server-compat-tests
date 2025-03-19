@@ -8,24 +8,38 @@ from pathlib import Path
 def pytest_generate_tests(metafunc):
   """Generate test parameters for server tests"""
   if "server_fixture" in metafunc.fixturenames:
-    # Get all server executables from artifacts directory
-    project_root = Path(__file__).parent.parent
-    artifacts_dir = project_root / "artifacts"
-    if not artifacts_dir.exists():
-      return []
+    # Check if specific artifact path was provided
+    artifact_path = metafunc.config.getoption("--artifact-path")
 
-    # Find the most recent release directory
-    release_dirs = [d for d in artifacts_dir.iterdir() if d.is_dir()]
-    if not release_dirs:
-      return []
+    if artifact_path:
+      # Test only the specified artifact
+      server_executables = [{"executable_name": Path(artifact_path).name}]
+      ids = [Path(artifact_path).name]
+    else:
+      # Get all server executables from artifacts directory
+      project_root = Path(__file__).parent.parent
+      artifacts_dir = project_root / "artifacts"
+      latest_txt = artifacts_dir / "latest.txt"
 
-    latest_release_dir = max(release_dirs, key=lambda x: x.stat().st_mtime)
+      if not artifacts_dir.exists():
+        return []
 
-    # Get all server executables with their names as IDs
-    server_executables = [
-      {"executable_name": f.name} for f in latest_release_dir.iterdir() if f.name.startswith("llama-server-")
-    ]
-    ids = [f["executable_name"] for f in server_executables]
+      if not latest_txt.exists():
+        return []
+
+      # Read the latest release tag from latest.txt
+      with open(latest_txt, "r") as f:
+        latest_tag = f.read().strip()
+
+      latest_release_dir = artifacts_dir / latest_tag
+      if not latest_release_dir.exists():
+        return []
+
+      # Get all server executables with their names as IDs
+      server_executables = [
+        {"executable_name": f.name} for f in latest_release_dir.iterdir() if f.name.startswith("llama-server-")
+      ]
+      ids = [f["executable_name"] for f in server_executables]
 
     metafunc.parametrize("server_fixture", server_executables, indirect=True, scope="class", ids=ids)
 
@@ -47,7 +61,13 @@ def server_fixture(request, model_path, release_artifacts):
     if not (executable_name.startswith("llama-server-windows-") and executable_name.endswith(".exe")):
       pytest.skip(f"Skipping {executable_name} as it's not a Windows executable")
 
-  executable_path = next(x for x in release_artifacts if x.endswith(executable_name))
+  # Get executable path - either from command line or from release artifacts
+  artifact_path = request.config.getoption("--artifact-path")
+  if artifact_path and Path(artifact_path).name == executable_name:
+    executable_path = artifact_path
+  else:
+    executable_path = next(x for x in release_artifacts if x.endswith(executable_name))
+
   if not executable_path:
     raise FileNotFoundError(f"Could not find executable {executable_name} in artifacts directory")
 

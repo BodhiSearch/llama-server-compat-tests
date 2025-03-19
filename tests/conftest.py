@@ -41,3 +41,13 @@ def model_path():
       "Model not found. This should not happen as pytest_configure should have downloaded the model."
     )
   return path
+
+
+def pytest_addoption(parser):
+  """Add artifact-path command line option"""
+  parser.addoption(
+    "--artifact-path",
+    action="store",
+    default=None,
+    help="Path to specific artifact to test",
+  )
