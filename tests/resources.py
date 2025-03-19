@@ -3,6 +3,7 @@ import time
 import requests
 import os
 import psutil
+import random
 from pathlib import Path
 
 
@@ -11,10 +12,11 @@ class ServerResource:
     self.executable_path = Path(executable_path)
     self.model_path = model_path
     self.process = None
-    self.port = 8080
+    self.port = random.randint(20000, 65535)  # Random port between 20000 and max port
 
   def setup(self):
     print(f"\nStarting server with executable {self.executable_path}")
+    print(f"Selected random port: {self.port}")
 
     if not self.executable_path.is_file():
       raise FileNotFoundError(f"Executable not found: {self.executable_path}")
@@ -23,6 +25,7 @@ class ServerResource:
 
     try:
       # Start the server process
+      print(f"Launching server on port {self.port}...")
       self.process = subprocess.Popen(
         [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
         stdout=subprocess.PIPE,
@@ -43,8 +46,9 @@ class ServerResource:
                 return
             except (ValueError, KeyError):
               pass
-        except requests.exceptions.ConnectionError:
-          time.sleep(1)
+        except requests.exceptions.ConnectionError as e:
+          print(f'server failed to start with error: {e}, retrying...')
+        time.sleep(1)
         retry_count += 1
 
       # If we get here, server failed to start
