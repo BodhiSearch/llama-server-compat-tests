@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 def download_release_artifacts():
-  """Downloads artifacts from the latest GitHub release"""
+  """Downloads artifacts from the latest GitHub release or uses existing artifacts if offline"""
   # Repository details
   repo_owner = "BodhiSearch"
   repo_name = "llama.cpp"
@@ -18,65 +18,83 @@ def download_release_artifacts():
   project_root = Path(__file__).parent.parent
   artifacts_dir = project_root / "artifacts"
   artifacts_dir.mkdir(exist_ok=True)
-
-  # Get the latest release info from GitHub
-  response = requests.get(latest_release_url, headers={"Accept": "application/vnd.github.v3+json"})
-  response.raise_for_status()
-
-  latest_release = response.json()
-  current_time = datetime.now().strftime("%Y%m%d%H%M")
-  tag_name = latest_release.get("tag_name", current_time)
-  release_dir = artifacts_dir / tag_name
   latest_txt = artifacts_dir / "latest.txt"
 
-  # Check if we have latest.txt and if the tag matches
-  cached_tag = None
-  if latest_txt.exists():
-    with open(latest_txt, "r") as f:
-      cached_tag = f.read().strip()
+  # Try to get latest release info from GitHub
+  try:
+    response = requests.get(latest_release_url, headers={"Accept": "application/vnd.github.v3+json"}, timeout=10)
+    response.raise_for_status()
+    latest_release = response.json()
+    current_time = datetime.now().strftime("%Y%m%d%H%M")
+    tag_name = latest_release.get("tag_name", current_time)
+    release_dir = artifacts_dir / tag_name
 
-  # If tags match and release directory exists with content, use cache
-  if cached_tag == tag_name and release_dir.exists() and any(release_dir.iterdir()):
-    print(f"Using cached artifacts for release {tag_name} from {release_dir}")
-  else:
-    print(f"Downloading artifacts for release {tag_name}...")
-    # Remove existing release directory if it exists (incomplete download)
-    if release_dir.exists():
-      import shutil
+    # Check if we have latest.txt and if the tag matches
+    cached_tag = None
+    if latest_txt.exists():
+      with open(latest_txt, "r") as f:
+        cached_tag = f.read().strip()
 
-      shutil.rmtree(release_dir)
+    # If tags match and release directory exists with content, use cache
+    if cached_tag == tag_name and release_dir.exists() and any(release_dir.iterdir()):
+      print(f"Using cached artifacts for release {tag_name} from {release_dir}")
+    else:
+      print(f"Downloading artifacts for release {tag_name}...")
+      # Remove existing release directory if it exists (incomplete download)
+      if release_dir.exists():
+        import shutil
 
-    release_dir.mkdir(exist_ok=True)
+        shutil.rmtree(release_dir)
 
-    # Save the release JSON data
-    release_json_path = release_dir / "release.json"
-    with open(release_json_path, "w") as f:
-      json.dump(latest_release, f, indent=2)
-      print(f"Saved release metadata to {release_json_path}")
+      release_dir.mkdir(exist_ok=True)
 
-    # Download all assets from the release
-    for asset in latest_release.get("assets", []):
-      asset_name = asset["name"]
-      download_url = asset["browser_download_url"]
-      asset_path = release_dir / asset_name
+      # Save the release JSON data
+      release_json_path = release_dir / "release.json"
+      with open(release_json_path, "w") as f:
+        json.dump(latest_release, f, indent=2)
+        print(f"Saved release metadata to {release_json_path}")
 
-      print(f"Downloading {asset_name}...")
-      response = requests.get(download_url, stream=True)
-      response.raise_for_status()
+      # Download all assets from the release
+      for asset in latest_release.get("assets", []):
+        asset_name = asset["name"]
+        download_url = asset["browser_download_url"]
+        asset_path = release_dir / asset_name
 
-      with open(asset_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-          f.write(chunk)
+        print(f"Downloading {asset_name}...")
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()
 
-      # On Unix-like systems (macOS/Linux), make binary files executable
-      if os.name == "posix" and not asset_name.endswith((".json", ".txt", ".md")):
-        os.chmod(asset_path, 0o755)  # rwxr-xr-x
-        print(f"Made {asset_name} executable")
+        with open(asset_path, "wb") as f:
+          for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
 
-    # Update latest.txt with the new tag
-    with open(latest_txt, "w") as f:
-      f.write(tag_name)
-    print(f"Updated latest.txt with tag {tag_name}")
+        # On Unix-like systems (macOS/Linux), make binary files executable
+        if os.name == "posix" and not asset_name.endswith((".json", ".txt", ".md")):
+          os.chmod(asset_path, 0o755)  # rwxr-xr-x
+          print(f"Made {asset_name} executable")
+
+      # Update latest.txt with the new tag
+      with open(latest_txt, "w") as f:
+        f.write(tag_name)
+      print(f"Updated latest.txt with tag {tag_name}")
+
+  except (requests.RequestException, json.JSONDecodeError) as e:
+    print(f"\nWarning: Failed to fetch latest release from GitHub: {str(e)}")
+    print("Checking for cached artifacts...")
+
+    # Try to use existing artifacts from latest.txt only
+    if latest_txt.exists():
+      with open(latest_txt, "r") as f:
+        cached_tag = f.read().strip()
+        release_dir = artifacts_dir / cached_tag
+        if release_dir.exists() and any(p.name.startswith("llama-server-") for p in release_dir.iterdir()):
+          print(f"Using cached artifacts from {release_dir}")
+          return release_dir
+
+    raise RuntimeError(
+      "Failed to download latest artifacts and no valid cached artifacts found in the release specified by latest.txt. "
+      "Please ensure you have internet connectivity or valid cached artifacts."
+    )
 
   return release_dir
 
