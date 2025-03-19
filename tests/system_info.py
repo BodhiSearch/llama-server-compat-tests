@@ -352,77 +352,91 @@ def get_gpu_driver_info():
     "nvidia": {"present": False},
     "amd": {"present": False},
     "intel": {"present": False},
-    "apple": {"present": False}
+    "apple": {"present": False},
   }
 
   # NVIDIA GPU info using nvidia-smi
   nvidia_smi = safe_run_command(["nvidia-smi"])
   if nvidia_smi:
-    driver_info["nvidia"].update({
-      "present": True,
-      "smi_output": nvidia_smi,
-      # Get NVIDIA driver version
-      "driver_version": safe_run_command(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]),
-      # Get detailed GPU info
-      "gpu_info": safe_run_command([
-        "nvidia-smi",
-        "--query-gpu=gpu_name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,utilization.memory",
-        "--format=csv,noheader,nounits"
-      ]),
-      # Get compute mode and other properties
-      "compute_mode": safe_run_command(["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"]),
-    })
+    driver_info["nvidia"].update(
+      {
+        "present": True,
+        "smi_output": nvidia_smi,
+        # Get NVIDIA driver version
+        "driver_version": safe_run_command(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]),
+        # Get detailed GPU info
+        "gpu_info": safe_run_command(
+          [
+            "nvidia-smi",
+            "--query-gpu=gpu_name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,utilization.memory",
+            "--format=csv,noheader,nounits",
+          ]
+        ),
+        # Get compute mode and other properties
+        "compute_mode": safe_run_command(["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"]),
+      }
+    )
 
   # AMD GPU info using rocm-smi
   rocm_smi = safe_run_command(["rocm-smi"])
   if rocm_smi:
-    driver_info["amd"].update({
-      "present": True,
-      "smi_output": rocm_smi,
-      # Get ROCm version
-      "driver_version": safe_run_command(["rocm-smi", "--showdriverversion"]),
-      # Get detailed GPU info
-      "gpu_info": safe_run_command(["rocm-smi", "--showproductname", "--showmeminfo", "--showtemp"]),
-    })
+    driver_info["amd"].update(
+      {
+        "present": True,
+        "smi_output": rocm_smi,
+        # Get ROCm version
+        "driver_version": safe_run_command(["rocm-smi", "--showdriverversion"]),
+        # Get detailed GPU info
+        "gpu_info": safe_run_command(["rocm-smi", "--showproductname", "--showmeminfo", "--showtemp"]),
+      }
+    )
 
   # Intel GPU info
   if platform.system() == "Linux":
     intel_gpu = safe_run_command(["intel_gpu_top", "-L"])
     if intel_gpu:
-      driver_info["intel"].update({
-        "present": True,
-        "smi_output": intel_gpu,
-        # Get Intel GPU driver info
-        "driver_version": safe_run_command(["intel_gpu_top", "-v"]),
-      })
+      driver_info["intel"].update(
+        {
+          "present": True,
+          "smi_output": intel_gpu,
+          # Get Intel GPU driver info
+          "driver_version": safe_run_command(["intel_gpu_top", "-v"]),
+        }
+      )
   elif platform.system() == "Windows":
     # Try Intel Graphics Command Center info on Windows
-    igcc = safe_run_command([
-      "powershell",
-      "Get-WmiObject",
-      "Win32_VideoController",
-      "|",
-      "Where-Object",
-      "{$_.Name -like '*Intel*'}",
-      "|",
-      "Select-Object",
-      "Name,DriverVersion"
-    ])
+    igcc = safe_run_command(
+      [
+        "powershell",
+        "Get-WmiObject",
+        "Win32_VideoController",
+        "|",
+        "Where-Object",
+        "{$_.Name -like '*Intel*'}",
+        "|",
+        "Select-Object",
+        "Name,DriverVersion",
+      ]
+    )
     if igcc:
-      driver_info["intel"].update({
-        "present": True,
-        "smi_output": igcc,
-      })
+      driver_info["intel"].update(
+        {
+          "present": True,
+          "smi_output": igcc,
+        }
+      )
 
   # Apple Silicon GPU info
   if platform.system() == "Darwin" and platform.machine() == "arm64":
     # Use system_profiler for Apple Silicon GPU info
     apple_gpu = safe_run_command(["system_profiler", "SPDisplaysDataType"])
     if apple_gpu:
-      driver_info["apple"].update({
-        "present": True,
-        "smi_output": apple_gpu,
-      })
+      driver_info["apple"].update(
+        {
+          "present": True,
+          "smi_output": apple_gpu,
+        }
+      )
 
   return driver_info
 

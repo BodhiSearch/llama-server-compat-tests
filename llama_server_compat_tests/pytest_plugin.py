@@ -1,6 +1,7 @@
 """
 Pytest plugin for tracking test execution times.
 """
+
 from datetime import datetime
 import pytest
 
@@ -16,7 +17,7 @@ class TimingPlugin:
   def pytest_sessionstart(self, session):
     """Called before test session starts."""
     self.suite_start = datetime.now()
-    print("\nTest Suite Started:", self.suite_start.strftime('%Y-%m-%d %H:%M:%S'))
+    print("\nTest Suite Started:", self.suite_start.strftime("%Y-%m-%d %H:%M:%S"))
 
   def pytest_runtest_logstart(self, nodeid, location):
     """Called at the start of running the runtest protocol for a single test item."""
@@ -27,7 +28,7 @@ class TimingPlugin:
     """Called at the end of running the runtest protocol for a single test item."""
     test_end = datetime.now()
     test_start = self.test_starts.get(nodeid)
-    
+
     if test_start:
       duration = test_end - test_start
       # Print timing information immediately after test
@@ -50,4 +51,4 @@ class TimingPlugin:
 def pytest_configure(config):
   """Register the timing plugin."""
   timing_plugin = TimingPlugin()
-  config.pluginmanager.register(timing_plugin, "timing_plugin") 
+  config.pluginmanager.register(timing_plugin, "timing_plugin")

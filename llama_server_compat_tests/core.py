@@ -2,6 +2,7 @@
 Core functionality for LLaMA server compatibility testing.
 """
 
+
 class LLaMAServerTestSuite:
   """
   Main test suite class for LLaMA server compatibility testing.
@@ -15,11 +16,7 @@ class LLaMAServerTestSuite:
 
   def get_info(self) -> dict:
     """Return basic information about the test suite."""
-    return {
-      "name": self.name,
-      "description": self.description,
-      "version": "0.1.0"
-    }
+    return {"name": self.name, "description": self.description, "version": "0.1.0"}
 
   def __str__(self) -> str:
-    return f"{self.name} - {self.description}" 
+    return f"{self.name} - {self.description}"

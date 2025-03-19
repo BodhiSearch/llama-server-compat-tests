@@ -47,7 +47,7 @@ class ServerResource:
             except (ValueError, KeyError):
               pass
         except requests.exceptions.ConnectionError as e:
-          print(f'server failed to start with error: {e}, retrying...')
+          print(f"server failed to start with error: {e}, retrying...")
         time.sleep(1)
         retry_count += 1
 
