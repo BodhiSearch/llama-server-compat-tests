@@ -2,42 +2,51 @@
 
 import subprocess
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
-class OutputCapture:
-  """Captures all output while still printing to terminal."""
+class RealTimeLogger:
+  """Logs output in real-time to both console and file."""
 
-  def __init__(self):
-    self.output_lines = []
+  def __init__(self, log_file):
+    self.log_file = log_file
+    self.file = open(log_file, "w", buffering=1)  # Line buffering
 
   def write(self, text):
-    self.output_lines.append(text)
     sys.__stdout__.write(text)
+    self.file.write(text)
+    self.file.flush()  # Ensure immediate write to disk
 
   def write_err(self, text):
-    self.output_lines.append(text)
     sys.__stderr__.write(text)
+    self.file.write(text)
+    self.file.flush()  # Ensure immediate write to disk
 
-  def get_output(self):
-    return "".join(self.output_lines)
+  def close(self):
+    if not self.file.closed:
+      self.file.close()
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    self.close()
 
 
-def run_command(cmd, output_capture, **kwargs):
-  """Run a command and return its output and return code."""
-  output_capture.write("\n" + "=" * 80 + "\n")
-  output_capture.write(f"Running command: {' '.join(cmd)}\n")
-  output_capture.write("=" * 80 + "\n")
+def run_command(cmd, logger, **kwargs):
+  """Run a command and stream its output in real-time."""
+  logger.write("\n" + "=" * 80 + "\n")
+  logger.write(f"Running command: {' '.join(cmd)}\n")
+  logger.write("=" * 80 + "\n")
 
   try:
-    # Use pipe redirection to capture both stdout and stderr in order
     process = subprocess.Popen(
       cmd,
       stdout=subprocess.PIPE,
       stderr=subprocess.STDOUT,  # Redirect stderr to stdout
       text=True,
-      bufsize=1,
+      bufsize=1,  # Line buffering
       **kwargs,
     )
 
@@ -46,32 +55,32 @@ def run_command(cmd, output_capture, **kwargs):
       if not line and process.poll() is not None:
         break
       if line:
-        output_capture.write(line)
+        logger.write(line)
 
     process.wait()
     return process.returncode
 
   except Exception as e:
     error_msg = str(e)
-    output_capture.write_err(f"Error: {error_msg}\n")
+    logger.write_err(f"Error: {error_msg}\n")
     return 1
 
 
-def check_poetry(output_capture):
+def check_poetry(logger):
   """Check if poetry is installed, install if not present."""
-  code = run_command(["poetry", "--version"], output_capture)
+  code = run_command(["poetry", "--version"], logger)
   if code != 0:
-    output_capture.write("Poetry not found. Attempting to install poetry...\n")
+    logger.write("Poetry not found. Attempting to install poetry...\n")
     if sys.platform == "win32":
       cmd = [sys.executable, "-m", "pip", "install", "poetry"]
     else:
       cmd = ["pip", "install", "poetry"]
 
-    code = run_command(cmd, output_capture)
+    code = run_command(cmd, logger)
     if code != 0:
-      output_capture.write("Failed to install poetry\n")
+      logger.write("Failed to install poetry\n")
       sys.exit(1)
-    output_capture.write("Poetry installed successfully!\n")
+    logger.write("Poetry installed successfully!\n")
   return True
 
 
@@ -84,86 +93,80 @@ def setup_reports_dir():
 
 
 def main():
-  # Initialize output capture
-  output_capture = OutputCapture()
   start_time = datetime.now()
-  output_capture.write(f"Script started at: {start_time}\n")
+  reports_dir = setup_reports_dir()
+  timestamp = datetime.now().strftime("%y%m%d%H%M%S")
+  report_path = reports_dir / f"pytest_{timestamp}.txt"
 
   try:
-    # Check/install poetry
-    check_poetry(output_capture)
+    with RealTimeLogger(report_path) as logger:
+      logger.write(f"Script started at: {start_time}\n")
 
-    # Install dependencies
-    output_capture.write("\nInstalling dependencies...\n")
-    code = run_command(["poetry", "install"], output_capture)
-    if code != 0:
-      output_capture.write("Failed to install dependencies\n")
-      sys.exit(1)
-    output_capture.write("Dependencies installed successfully!\n")
+      # Check/install poetry
+      check_poetry(logger)
 
-    # Collect system information after dependencies are installed
-    output_capture.write("\nCollecting system information...\n")
-    code = run_command(["poetry", "run", "python", "-m", "tests.system_info"], output_capture)
-    if code != 0:
-      output_capture.write("Failed to collect system information\n")
-      sys.exit(1)
-    output_capture.write("System information collected successfully!\n")
+      # Install dependencies
+      logger.write("\nInstalling dependencies...\n")
+      code = run_command(["poetry", "install"], logger)
+      if code != 0:
+        logger.write("Failed to install dependencies\n")
+        sys.exit(1)
+      logger.write("Dependencies installed successfully!\n")
 
-    # Download model using module
-    output_capture.write("\nDownloading model...\n")
-    code = run_command(["poetry", "run", "python", "-m", "tests.download_model"], output_capture)
-    if code != 0:
-      output_capture.write("Failed to download model\n")
-      sys.exit(1)
-    output_capture.write("Model downloaded successfully!\n")
+      # Collect system information after dependencies are installed
+      logger.write("\nCollecting system information...\n")
+      code = run_command(["poetry", "run", "python", "-m", "tests.system_info"], logger)
+      if code != 0:
+        logger.write("Failed to collect system information\n")
+        sys.exit(1)
+      logger.write("System information collected successfully!\n")
 
-    # Download artifacts using module
-    output_capture.write("\nDownloading artifacts...\n")
-    code = run_command(["poetry", "run", "python", "-m", "tests.download_artifacts"], output_capture)
-    if code != 0:
-      output_capture.write("Failed to download artifacts\n")
-      sys.exit(1)
-    output_capture.write("Artifacts downloaded successfully!\n")
+      # Download model using module
+      logger.write("\nDownloading model...\n")
+      code = run_command(["poetry", "run", "python", "-m", "tests.download_model"], logger)
+      if code != 0:
+        logger.write("Failed to download model\n")
+        sys.exit(1)
+      logger.write("Model downloaded successfully!\n")
 
-    # Setup reports directory
-    reports_dir = setup_reports_dir()
-    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
+      # Download artifacts using module
+      logger.write("\nDownloading artifacts...\n")
+      code = run_command(["poetry", "run", "python", "-m", "tests.download_artifacts"], logger)
+      if code != 0:
+        logger.write("Failed to download artifacts\n")
+        sys.exit(1)
+      logger.write("Artifacts downloaded successfully!\n")
 
-    # Run pytest
-    output_capture.write("\nRunning tests...\n")
-    code = run_command(
-      [
-        "poetry",
-        "run",
-        "pytest",
-        "-s",  # Show print statements
-        "-v",  # Verbose output
-        "--verbose",  # Extra verbose (shows skip reasons)
-        "-r",
-        "fEsxXa",  # Show extra test summary info (including skip reasons)
-      ],
-      output_capture,
-    )
+      # Run pytest
+      logger.write("\nRunning tests...\n")
+      code = run_command(
+        [
+          "poetry",
+          "run",
+          "pytest",
+          "-s",  # Show print statements
+          "-v",  # Verbose output
+          "--verbose",  # Extra verbose (shows skip reasons)
+          "-r",
+          "fEsxXa",  # Show extra test summary info (including skip reasons)
+        ],
+        logger,
+      )
 
-    # Add completion time
-    end_time = datetime.now()
-    duration = end_time - start_time
-    output_capture.write(f"\nScript completed at: {end_time}\n")
-    output_capture.write(f"Total duration: {duration}\n")
+      # Add completion time
+      end_time = datetime.now()
+      duration = end_time - start_time
+      logger.write(f"\nScript completed at: {end_time}\n")
+      logger.write(f"Total duration: {duration}\n")
+      logger.write(f"\nTest results saved to {report_path}\n")
 
-    # Write output to report file with timestamp
-    report_path = reports_dir / f"pytest_{timestamp}.txt"
-    with open(report_path, "w") as f:
-      f.write(output_capture.get_output())
-
-    output_capture.write(f"\nTest results saved to {report_path}\n")
-    sys.exit(code)
+      sys.exit(code)
 
   except KeyboardInterrupt:
-    output_capture.write("\nScript interrupted by user\n")
+    sys.stderr.write("\nScript interrupted by user\n")
     sys.exit(1)
   except Exception as e:
-    output_capture.write_err(f"\nUnexpected error: {str(e)}\n")
+    sys.stderr.write(f"\nUnexpected error: {str(e)}\n")
     sys.exit(1)
 
 
