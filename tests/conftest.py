@@ -4,21 +4,31 @@ from .download_model import download_model
 from .download_artifacts import download_release_artifacts
 
 
-def pytest_configure():
+def pytest_configure(config):
   """
   This hook is called before test collection begins.
   We use it to ensure artifacts and model are downloaded before any tests are collected.
   """
-  download_release_artifacts()
+  # Only download artifacts if no specific artifact path is provided
+  if not config.getoption("--artifact-path"):
+    download_release_artifacts()
   download_model()
 
 
 @pytest.fixture(scope="session")
-def release_artifacts():
+def release_artifacts(request):
   """
   Returns paths to the downloaded artifacts.
-  The actual download is handled by pytest_configure.
+  If a specific artifact path is provided, returns just that path.
+  Otherwise returns all downloaded artifacts.
   """
+  artifact_path = request.config.getoption("--artifact-path")
+  if artifact_path:
+    if not os.path.exists(artifact_path):
+      raise FileNotFoundError(f"Specified artifact not found: {artifact_path}")
+    return [artifact_path]
+
+  # If no specific artifact, get all downloaded artifacts
   release_dir = download_release_artifacts()
   paths = [str(path) for path in release_dir.iterdir() if path.name.startswith("llama-server-")]
 
