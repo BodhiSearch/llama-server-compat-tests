@@ -2,10 +2,10 @@ import subprocess
 import time
 import requests
 import os
-import psutil
 import random
 import re
 from pathlib import Path
+import threading
 
 
 class ServerResource:
@@ -36,6 +36,23 @@ class ServerResource:
 
     return False
 
+  def _read_server_output(self, stdout, stderr):
+    """Read server output in real-time and print it."""
+    while True:
+      # Read stdout
+      stdout_line = stdout.readline()
+      if stdout_line:
+        print(f"Server stdout: {stdout_line.decode().rstrip()}")
+
+      # Read stderr
+      stderr_line = stderr.readline()
+      if stderr_line:
+        print(f"Server stderr: {stderr_line.decode().rstrip()}")
+
+      # If process has ended and no more output, break
+      if not stdout_line and not stderr_line and self.process.poll() is not None:
+        break
+
   def setup(self):
     print(f"\nStarting server with executable {self.executable_path}")
     print(f"Selected random port: {self.port}")
@@ -52,7 +69,14 @@ class ServerResource:
         [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        bufsize=1,  # Line buffering
       )
+
+      # Start reading server output in a separate thread
+      output_thread = threading.Thread(
+        target=self._read_server_output, args=(self.process.stdout, self.process.stderr), daemon=True
+      )
+      output_thread.start()
 
       # Wait for server to start
       max_retries = 30
