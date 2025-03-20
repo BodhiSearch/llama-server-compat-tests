@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "llama-server-compat-tests"
-version = "0.1.1"
+version = "0.1.2"
 description = "A comprehensive test suite for validating LLaMA server implementations across different platforms and architectures"
 authors = ["anagri <127566+anagri@users.noreply.github.com>"]
 readme = "README.md"
