@@ -38,20 +38,26 @@ class ServerResource:
 
   def _read_server_output(self, stdout, stderr):
     """Read server output in real-time and print it."""
-    while True:
-      # Read stdout
-      stdout_line = stdout.readline()
-      if stdout_line:
-        print(f"Server stdout: {stdout_line.decode().rstrip()}")
+    try:
+      while self.process is not None:  # Check process exists
+        # Read stdout
+        stdout_line = stdout.readline()
+        if stdout_line:
+          print(f"Server stdout: {stdout_line.decode().rstrip()}")
 
-      # Read stderr
-      stderr_line = stderr.readline()
-      if stderr_line:
-        print(f"Server stderr: {stderr_line.decode().rstrip()}")
+        # Read stderr
+        stderr_line = stderr.readline()
+        if stderr_line:
+          print(f"Server stderr: {stderr_line.decode().rstrip()}")
 
-      # If process has ended and no more output, break
-      if not stdout_line and not stderr_line and self.process.poll() is not None:
-        break
+        # If process has ended and no more output, break
+        if not stdout_line and not stderr_line and (self.process is None or self.process.poll() is not None):
+          break
+    except (ValueError, IOError) as e:
+      # Handle pipe errors or closed streams gracefully
+      print(f"Output reader thread stopped: {str(e)}")
+    except Exception as e:
+      print(f"Unexpected error in output reader: {str(e)}")
 
   def setup(self):
     print(f"\nStarting server with executable {self.executable_path}")
@@ -63,20 +69,20 @@ class ServerResource:
       raise PermissionError(f"Executable is not executable: {self.executable_path}")
 
     try:
-      # Start the server process
+      # Start the server process with default buffering for binary streams
       print(f"Launching server on port {self.port}...")
       self.process = subprocess.Popen(
         [str(self.executable_path), "--model", self.model_path, "--port", str(self.port), "--host", "127.0.0.1"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        bufsize=1,  # Line buffering
+        bufsize=0,  # Use unbuffered mode for binary streams
       )
 
       # Start reading server output in a separate thread
-      output_thread = threading.Thread(
+      self.output_thread = threading.Thread(
         target=self._read_server_output, args=(self.process.stdout, self.process.stderr), daemon=True
       )
-      output_thread.start()
+      self.output_thread.start()
 
       # Wait for server to start
       max_retries = 30
@@ -94,7 +100,7 @@ class ServerResource:
               pass
         except requests.exceptions.ConnectionError:
           # Check if process has crashed
-          if self.process.poll() is not None:
+          if self.process and self.process.poll() is not None:
             stdout, stderr = self.process.communicate()
             # Check for CPU compatibility issues
             self._check_server_crash(stderr)
@@ -122,6 +128,7 @@ class ServerResource:
         except subprocess.TimeoutExpired:
           pass
       raise TimeoutError(error_msg)
+
     except Exception as e:
       print(f"Error during server setup: {str(e)}")
       self.cleanup()
@@ -140,9 +147,15 @@ class ServerResource:
           # If graceful termination fails, force kill
           print("Graceful termination failed, forcing kill")
           self.process.kill()
+          self.process.wait(timeout=2)
       except Exception as e:
         print(f"Warning: Error during process cleanup: {e}")
       finally:
+        # Close process streams
+        if self.process.stdout:
+          self.process.stdout.close()
+        if self.process.stderr:
+          self.process.stderr.close()
         self.process = None
         print("Server cleanup completed")
 
