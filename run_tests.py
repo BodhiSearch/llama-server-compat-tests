@@ -4,6 +4,39 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+import re
+
+
+class TextFilter:
+  """Base class for text filters in the pipeline."""
+
+  def filter(self, text: str) -> str:
+    """Filter the text and return modified version."""
+    return text
+
+
+class PIIFilter(TextFilter):
+  """Filter to remove personally identifiable information from text."""
+
+  def __init__(self):
+    # Order matters - project dir replacement should happen before home dir
+    self.replacements = [
+      # First replace project directory paths
+      (r'[^\s"]*?/llama-server-compat-tests/', "$PROJECT_DIR/"),
+      (r'[^\s"]*?\\\\llama-server-compat-tests\\\\', "$PROJECT_DIR\\\\"),  # Double escape for Windows paths
+      # Then replace home directories
+      (r"/Users/[^/]+", "$HOME"),
+      (r"/home/[^/]+", "$HOME"),
+      (r"C:\\\\Users\\\\[^\\\\]+", "$HOME"),  # Double escape for Windows paths
+    ]
+    # Compile regex patterns for better performance
+    self.patterns = [(re.compile(pattern), repl) for pattern, repl in self.replacements]
+
+  def filter(self, text: str) -> str:
+    """Replace PII patterns with generic placeholders in specified order."""
+    for pattern, repl in self.patterns:
+      text = pattern.sub(repl, text)
+    return text
 
 
 class RealTimeLogger:
@@ -12,15 +45,24 @@ class RealTimeLogger:
   def __init__(self, log_file):
     self.log_file = log_file
     self.file = open(log_file, "w", buffering=1)  # Line buffering
+    self.filters = [PIIFilter()]  # Initialize with PII filter, can add more filters
+
+  def apply_filters(self, text: str) -> str:
+    """Apply all filters in the pipeline to the text."""
+    for filter in self.filters:
+      text = filter.filter(text)
+    return text
 
   def write(self, text):
-    sys.__stdout__.write(text)
-    self.file.write(text)
+    filtered_text = self.apply_filters(text)
+    sys.__stdout__.write(filtered_text)
+    self.file.write(filtered_text)
     self.file.flush()  # Ensure immediate write to disk
 
   def write_err(self, text):
-    sys.__stderr__.write(text)
-    self.file.write(text)
+    filtered_text = self.apply_filters(text)
+    sys.__stderr__.write(filtered_text)
+    self.file.write(filtered_text)
     self.file.flush()  # Ensure immediate write to disk
 
   def close(self):
