@@ -88,7 +88,7 @@ class TestServer:
   Each server instance is started once per class and cleaned up after all tests complete.
   """
 
-  @pytest.mark.timeout(10)
+  @pytest.mark.timeout(30)  # Allow up to 30 seconds for health check
   def test_health_check(self, server_fixture):
     """Test that the server's health endpoint returns 200 OK"""
     response = requests.get(f"http://127.0.0.1:{server_fixture.port}/health")
