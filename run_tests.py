@@ -21,16 +21,31 @@ class PIIFilter(TextFilter):
   def __init__(self):
     # Order matters - project dir replacement should happen before home dir
     self.replacements = [
-      # First replace project directory paths
+      # Project directory patterns - Unix style
+      (r'[^\s"]*?/llama-server-compat-tests\s', "$PROJECT_DIR "),
+      (r'[^\s"]*?/llama-server-compat-tests$', "$PROJECT_DIR"),
       (r'[^\s"]*?/llama-server-compat-tests/', "$PROJECT_DIR/"),
-      (r'[^\s"]*?\\\\llama-server-compat-tests\\\\', "$PROJECT_DIR\\\\"),  # Double escape for Windows paths
+      # Project directory patterns - Windows style
+      (r'[^\s"]*?\\llama-server-compat-tests\s', "$PROJECT_DIR "),
+      (r'[^\s"]*?\\llama-server-compat-tests$', "$PROJECT_DIR"),
+      (r'[^\s"]*?\\llama-server-compat-tests\\', "$PROJECT_DIR\\\\"),
       # Then replace home directories
       (r"/Users/[^/]+", "$HOME"),
       (r"/home/[^/]+", "$HOME"),
-      (r"C:\\\\Users\\\\[^\\\\]+", "$HOME"),  # Double escape for Windows paths
+      (r"C:\\\\Users\\\\[^\\\\]+", "$HOME"),
+      # Machine-specific information
+      (r"kern\.hostname:.*", "kern.hostname: $HOSTNAME"),
+      (r"kern\.uuid:.*", "kern.uuid: $MACHINE_UUID"),
+      (r"kern\.boottime:.*\d{4}", "kern.boottime: $BOOT_TIME"),
     ]
     # Compile regex patterns for better performance
-    self.patterns = [(re.compile(pattern), repl) for pattern, repl in self.replacements]
+    self.patterns = []
+    for pattern, repl in self.replacements:
+      try:
+        compiled = re.compile(pattern)
+        self.patterns.append((compiled, repl))
+      except re.error as e:
+        raise ValueError(f"Invalid regex pattern: '{pattern}'\nError: {str(e)}")
 
   def filter(self, text: str) -> str:
     """Replace PII patterns with generic placeholders in specified order."""
